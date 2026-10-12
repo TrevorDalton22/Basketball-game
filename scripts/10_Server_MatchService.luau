@@ -59,6 +59,10 @@ export type CourtState = {
 	Possessor: Player?, -- who the shot clock is running against
 	ShotClockEndsAt: number, -- 0 while not running
 	WaitingSince: number, -- Dead state: when we started waiting for a respawn (0 = not waiting)
+	-- A reset during a live shot: the turnover waits until the shot lands
+	PendingTurnover: boolean,
+	PendingOffense: Player?,
+	Resets: { [Player]: number },
 	AwardedShots: { [number]: boolean },
 	Message: string,
 	WinnerUserId: number,
@@ -303,6 +307,8 @@ local function endMatch(cs: CourtState, winner: Player?, reason: string)
 	cs.PhaseEndsAt = now() + MATCH.GameOverTime
 	cs.ShotClockEndsAt = 0
 	cs.WaitingSince = 0
+	cs.PendingTurnover = false
+	cs.PendingOffense = nil
 	cs.WinnerUserId = if winner then winner.UserId else 0
 	cs.ResultReason = reason
 	cs.Message = ""
@@ -359,6 +365,8 @@ end
 -- the clock ran out in the same moment.
 local function deadBall(cs: CourtState, nextOffense: Player?, message: string)
 	pauseClock(cs)
+	cs.PendingTurnover = false
+	cs.PendingOffense = nil
 	cs.Message = message
 	if not cs.Overtime and cs.ClockRemaining <= 0 then
 		endByTime(cs)
@@ -408,6 +416,9 @@ local function finish(cs: CourtState)
 	cs.ShotClockEndsAt = 0
 	cs.PhaseEndsAt = 0
 	cs.WaitingSince = 0
+	cs.PendingTurnover = false
+	cs.PendingOffense = nil
+	cs.Resets = {}
 	cs.Overtime = false
 	cs.OvertimeEndsAt = 0
 	cs.AwardedShots = {}
@@ -433,15 +444,38 @@ local function onParticipantLeft(player: Player)
 end
 
 -- A participant's character died (reset, fell, flung). Not a forfeit: the
--- ball goes to the opponent and play waits for the respawn.
+-- ball goes to the opponent and play waits for the respawn. Resetting over and
+-- over to stall the match forfeits it.
 local function onParticipantDied(player: Player)
 	local cs = playerCourt[player]
 	if not cs then
 		return
 	end
 	local state = cs.State
+	if state == "Idle" or state == "GameOver" then
+		return
+	end
+	local resets = (cs.Resets[player] or 0) + 1
+	cs.Resets[player] = resets
+	if resets > MATCH.MaxResets then
+		local other = opponentOf(cs, player)
+		if other and other.Parent then
+			endMatch(cs, other, "Forfeit")
+		else
+			endMatch(cs, nil, "Cancelled")
+		end
+		return
+	end
 	if state == "Live" then
 		tell(cs, "Turnover", { Reason = "Player reset", LastTouchUserId = player.UserId })
+		local ball = cs.Ball
+		local shot = ball.Shot
+		if ball.State == "InFlight" and shot ~= nil and shot.MatchId == cs.MatchId then
+			-- Let the shot in the air land first: a reset must never cancel a basket
+			cs.PendingTurnover = true
+			cs.PendingOffense = opponentOf(cs, player)
+			return
+		end
 		deadBall(cs, opponentOf(cs, player), "RESET · TURNOVER")
 	elseif state == "Countdown" or state == "Check" then
 		deadBall(cs, cs.Offense, "WAITING FOR PLAYER")
@@ -529,8 +563,9 @@ local function onPickedUp(ball: any, player: Player)
 	if not cs or cs.State ~= "Live" then
 		return
 	end
-	-- A new possession restarts the shot clock; re-grabbing your own miss does not
-	if cs.Possessor ~= player then
+	-- A new possession restarts the shot clock, and so does a shot that hit the
+	-- rim or glass. Re-grabbing your own airball does not.
+	if cs.Possessor ~= player or ball.TouchedHoop then
 		cs.Possessor = player
 		cs.ShotClockEndsAt = now() + MATCH.ShotClock
 		publish(cs)
@@ -561,6 +596,9 @@ function MatchService.Init(courts: { any })
 			Possessor = nil,
 			ShotClockEndsAt = 0,
 			WaitingSince = 0,
+			PendingTurnover = false,
+			PendingOffense = nil,
+			Resets = {},
 			AwardedShots = {},
 			Message = "",
 			WinnerUserId = 0,
@@ -618,6 +656,9 @@ function MatchService.StartMatch(cs: CourtState, home: Player, away: Player): bo
 	cs.ClockEndsAt = 0
 	cs.ShotClockEndsAt = 0
 	cs.WaitingSince = 0
+	cs.PendingTurnover = false
+	cs.PendingOffense = nil
+	cs.Resets = {}
 	cs.Overtime = false
 	cs.OvertimeEndsAt = 0
 	cs.AwardedShots = {}
@@ -671,6 +712,15 @@ local function sweepIntruders(cs: CourtState)
 	end
 end
 
+-- Overtime cannot last forever (checked in every active phase)
+local function overtimeExpired(cs: CourtState, t: number): boolean
+	if cs.Overtime and cs.OvertimeEndsAt > 0 and t >= cs.OvertimeEndsAt and (cs.Ball.State :: string) ~= "InFlight" then
+		endMatch(cs, nil, "Draw")
+		return true
+	end
+	return false
+end
+
 local function updateLive(cs: CourtState, t: number)
 	local ball = cs.Ball
 	-- Game clock (a shot already in the air when it expires still counts)
@@ -685,9 +735,9 @@ local function updateLive(cs: CourtState, t: number)
 			end
 		end
 	end
-	-- Overtime cannot last forever
-	if cs.Overtime and cs.OvertimeEndsAt > 0 and t >= cs.OvertimeEndsAt and ball.State ~= "InFlight" then
-		endMatch(cs, nil, "Draw")
+	-- A reset happened while a shot was in the air; it has landed now
+	if cs.PendingTurnover and (ball.State :: string) ~= "InFlight" then
+		deadBall(cs, cs.PendingOffense, "RESET · TURNOVER")
 		return
 	end
 	-- Shot clock: only expires while someone is holding the ball
@@ -745,6 +795,8 @@ function MatchService.Update(dt: number)
 		local state = cs.State
 		if state == "Idle" then
 			updatePractice(cs)
+		elseif state ~= "GameOver" and overtimeExpired(cs, t) then
+			-- ended as a draw
 		elseif state == "Countdown" or state == "Check" then
 			if t >= cs.PhaseEndsAt then
 				goLive(cs)

@@ -52,6 +52,10 @@ export type Ball = {
 	EnforceBounds: boolean,
 	-- Set by MatchService: seconds a loose ball may sit untouched before Lost fires
 	LooseTimeout: number,
+	-- True once the ball touched the rim/backboard since the last shot. A decided
+	-- miss only counts if it physically bounced in, and a rim touch resets the
+	-- shot clock (like real basketball).
+	TouchedHoop: boolean,
 }
 
 -- (ball, player)
@@ -181,7 +185,13 @@ function BallService.Create(court: any): Ball
 		PickupFilter = nil,
 		EnforceBounds = false,
 		LooseTimeout = BALL.LooseTimeout,
+		TouchedHoop = false,
 	}
+	part.Touched:Connect(function(hit)
+		if hit.CollisionGroup == Config.Collision.Hoop and (ball.State == "InFlight" or ball.State == "Loose") then
+			ball.TouchedHoop = true
+		end
+	end)
 	freePhysics(ball)
 	setState(ball, "Dead")
 	table.insert(balls, ball)
@@ -248,6 +258,7 @@ end
 function BallService.Release(ball: Ball, newState: BallState?)
 	local wasHeld = ball.State == "Held"
 	freePhysics(ball)
+	ball.TouchedHoop = false
 	if wasHeld and ball.Holder then
 		ball.NoPickupUntil[ball.Holder] = os.clock() + 0.3
 	end
@@ -259,6 +270,7 @@ end
 -- Teleport the ball (not held) to a world position with no velocity
 function BallService.PlaceAt(ball: Ball, position: Vector3, newState: BallState?)
 	freePhysics(ball)
+	ball.TouchedHoop = false
 	setHolder(ball, nil)
 	ball.Shot = nil
 	ball.Part.CFrame = CFrame.new(position)
@@ -291,6 +303,7 @@ function BallService.Launch(ball: Ball, from: Vector3, velocity: Vector3, shot: 
 		return false
 	end
 	freePhysics(ball)
+	ball.TouchedHoop = false
 	setHolder(ball, nil)
 	local part = ball.Part
 	part.CFrame = CFrame.new(from)
@@ -382,8 +395,11 @@ local function updateBall(ball: Ball, now: number)
 			local alpha = (previous.Y - rim.Y) / math.max(previous.Y - position.Y, 1e-4)
 			local crossing = previous:Lerp(position, alpha)
 			local flat = Vector3.new(crossing.X - rim.X, 0, crossing.Z - rim.Z).Magnitude
-			if flat <= Config.Court.RimRadius - 0.05 then
-				local shot = ball.Shot
+			local shot = ball.Shot
+			-- A decided make always counts; a decided miss only if it really
+			-- bounced in off the rim or glass
+			local legit = shot ~= nil and (shot.Made or ball.TouchedHoop)
+			if flat <= Config.Court.RimRadius - 0.05 and legit then
 				setState(ball, "Scored")
 				ball.LastPosition = position
 				if shot then

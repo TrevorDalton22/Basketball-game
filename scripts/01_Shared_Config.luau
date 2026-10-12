@@ -132,6 +132,7 @@ Config.Match = {
 	ShotClock = 20, -- one player may hold possession this long before it's a turnover
 	OvertimeLimit = 120, -- overtime with no basket ends as a draw after this
 	RespawnWait = 15, -- a participant who died must be back within this, or forfeits
+	MaxResets = 3, -- resetting more often than this in one match forfeits it
 }
 
 Config.Players = {

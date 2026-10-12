@@ -235,6 +235,8 @@ local function build()
 		TextColor3 = THEME.TextDim,
 		Font = THEME.Font,
 		TextScaled = true,
+		-- Not gamepad-selectable: a controller forfeits with D-pad down (twice)
+		Selectable = false,
 		Parent = scoreboard,
 	}, { UIKit.corner(8) :: Instance, UIKit.padding(5) })
 	UIKit.new("UITextSizeConstraint", { MaxTextSize = 14, Parent = leaveMatchButton })
@@ -322,6 +324,7 @@ local function build()
 		TextColor3 = THEME.Text,
 		Font = THEME.FontHeavy,
 		TextSize = 22,
+		Selectable = false,
 		Parent = queuePanel,
 	}, { UIKit.corner(12) })
 
@@ -392,6 +395,13 @@ local function layoutForDevice()
 	for _, uiScale in scales do
 		uiScale.Scale = scale
 	end
+	-- Keep the banner below the scoreboard row (scoreboard + shot clock /
+	-- leave-match row) on short screens, and the toasts below the banner
+	local scoreboardBottom = 66 + (68 + 6 + 28) * scale
+	local bannerY = math.max(0.36 * viewport.Y, scoreboardBottom + 55 * scale + 6)
+	banner.Position = UDim2.new(0.5, 0, 0, bannerY)
+	local toastY = math.max(0.56 * viewport.Y, bannerY + (55 + 34) * scale + 6)
+	toastHolder.Position = UDim2.new(0.5, 0, 0, toastY)
 	if touch then
 		-- Bottom-left is the thumbstick on phones; keep the hint between the sticks
 		hint.AnchorPoint = Vector2.new(0.5, 1)
@@ -486,7 +496,7 @@ local function pressLeaveMatch()
 	confirmPending = true
 	confirmToken += 1
 	local token = confirmToken
-	leaveMatchButton.Text = "TAP AGAIN TO FORFEIT"
+	leaveMatchButton.Text = "PRESS AGAIN TO FORFEIT"
 	leaveMatchButton.TextColor3 = THEME.Bad
 	Hud.Toast("Press again to forfeit the match", THEME.Bad, 2.5)
 	task.delay(3, function()
@@ -565,7 +575,7 @@ local function refresh()
 	if not canLeaveMatch and confirmPending then
 		resetLeaveConfirm()
 	end
-	leaveMatchBound = bindAction(LEAVE_MATCH_ACTION, canLeaveMatch, leaveMatchBound, pressLeaveMatch, Enum.KeyCode.ButtonSelect)
+	leaveMatchBound = bindAction(LEAVE_MATCH_ACTION, canLeaveMatch, leaveMatchBound, pressLeaveMatch, Enum.KeyCode.DPadDown)
 	if playing and court then
 		homeName.Text = attrString(court, "HomeName")
 		awayName.Text = attrString(court, "AwayName")
@@ -740,6 +750,10 @@ local function onFeedback(kind: string, data: any)
 		showBanner("OVERTIME", "Next basket wins", THEME.Accent, 2)
 	elseif kind == "MatchStarting" then
 		Hud.Toast("Match found — 1v1!", THEME.Accent, 2)
+	elseif kind == "ShotRejected" then
+		if typeof(data.Reason) == "string" and data.Reason ~= "" then
+			Hud.Toast(data.Reason, THEME.Bad, 2)
+		end
 	elseif kind == "Notice" then
 		if typeof(data.Text) == "string" then
 			Hud.Toast(data.Text, THEME.TextDim, 2.5)

@@ -68,27 +68,53 @@ end
 
 -- Where the ball should cross the rim plane.
 -- Decided misses cross outside the ring's tube centreline, so contact with the
--- rim pushes the ball away from the hoop instead of rolling it in.
+-- rim pushes the ball away from the hoop instead of rolling it in. As a
+-- backstop, BallService only counts a decided miss that physically touched
+-- the hoop.
 local function aimPoint(rim: Vector3, toRim: Vector3, boardDir: Vector3, made: boolean, quality: string, fraction: number, distance: number): Vector3
 	local side = toRim:Cross(Vector3.yAxis)
 	local r = Config.Court.RimRadius
 	local outside = r + Config.Court.RimTube + Config.Ball.Radius * 0.35
+	-- Far enough from the ring that the ball cannot touch it at all
+	local clear = r + Config.Court.RimTube + Config.Ball.Radius + 0.3
 	local sideSign = if rng:NextNumber() < 0.5 then -1 else 1
 	-- From the wings/baseline one "side" points into the glass; always miss away from it
 	local towardBoard = side:Dot(boardDir)
 	if math.abs(towardBoard) > 0.35 then
 		sideSign = if towardBoard > 0 then -1 else 1
 	end
+	-- Shooting from beside/behind the board, the "front" of the rim is next to the glass
+	local frontNearBoard = (-toRim):Dot(boardDir) > 0.3
+
+	local function sideMiss(): Vector3
+		return rim + side * (sideSign * outside) + toRim * rng:NextNumber(-0.3, 0.3)
+	end
+	local function frontMiss(): Vector3
+		if frontNearBoard then
+			return sideMiss()
+		end
+		return rim - toRim * outside + side * rng:NextNumber(-0.3, 0.3)
+	end
+
 	if made then
 		return rim + side * rng:NextNumber(-0.12, 0.12) + toRim * rng:NextNumber(-0.12, 0.12)
 	end
 	if fraction < SHOT.AirballFraction then
-		-- Way too early: falls short (never behind the shooter on close shots)
-		local short = math.min(rng:NextNumber(2.5, 4.5), 0.6 * math.max(distance - SHOT.ReleaseForward, 0))
-		return rim - toRim * short - Vector3.new(0, 1, 0)
+		-- Way too early: falls short, well clear of the ring. Too close to fall
+		-- short in front of the shooter? Then it falls off to the side instead.
+		local room = distance - SHOT.ReleaseForward - 0.5
+		if room >= clear and not frontNearBoard then
+			local short = math.clamp(rng:NextNumber(2.5, 4.5), clear, room)
+			local target = rim - toRim * short - Vector3.new(0, 1, 0)
+			-- Keep it off the glass (the board's front face is this far behind the rim)
+			local glassGap = Config.Court.RimDistance - Config.Court.BackboardZ - Config.Ball.Radius - 0.2
+			if (target - rim):Dot(boardDir) < glassGap then
+				return target
+			end
+		end
+		return rim + side * (sideSign * clear) - Vector3.new(0, 1, 0)
 	elseif quality == "Early" then
-		-- Front rim
-		return rim - toRim * outside + side * rng:NextNumber(-0.3, 0.3)
+		return frontMiss()
 	elseif quality == "Late" then
 		if fraction > 1 then
 			-- Very late: off the glass well wide of the ring, so it caroms away
@@ -100,9 +126,9 @@ local function aimPoint(rim: Vector3, toRim: Vector3, boardDir: Vector3, made: b
 	end
 	-- A good release that still rims out: off the side or the front of the rim
 	if rng:NextNumber() < 0.5 then
-		return rim + side * (sideSign * outside) + toRim * rng:NextNumber(-0.3, 0.3)
+		return sideMiss()
 	end
-	return rim - toRim * outside + side * rng:NextNumber(-0.4, 0.4)
+	return frontMiss()
 end
 
 local function resolveShot(player: Player, entry: Pending, clientHold: number?)
@@ -114,10 +140,28 @@ local function resolveShot(player: Player, entry: Pending, clientHold: number?)
 	local root = CharacterService.GetRoot(player)
 	local court = ball.Court
 	local origin: CFrame = court.Origin
-	-- No shots from out of bounds in a match (BallService calls the turnover)
-	local outOfBounds = context ~= nil and not context.Practice and root ~= nil and not BasketballMath.IsInBounds(origin, root.Position, 0)
-	if not context or not root or outOfBounds or CharacterService.IsSuspicious(player) then
+	local function reject(reason: string)
 		ball.Part:SetAttribute("Shooting", false)
+		feedback:FireClient(player, "ShotRejected", { Reason = reason })
+	end
+	if not context or not root then
+		reject("")
+		return
+	end
+	-- No shots from out of bounds in a match (BallService calls the turnover)
+	if not context.Practice and not BasketballMath.IsInBounds(origin, root.Position, 0) then
+		reject("Out of bounds")
+		return
+	end
+	if CharacterService.IsSuspicious(player) then
+		reject("")
+		return
+	end
+	-- No shots from behind the backboard: the glass is in the way
+	local localPos = origin:PointToObjectSpace(root.Position)
+	local boardHalf = Config.Court.BackboardSize.X / 2 + Config.Ball.Radius + 0.5
+	if localPos.Z < Config.Court.BackboardZ and math.abs(localPos.X) <= boardHalf then
+		reject("No shots from behind the backboard")
 		return
 	end
 
@@ -153,7 +197,7 @@ local function resolveShot(player: Player, entry: Pending, clientHold: number?)
 		Points = points,
 		Quality = quality,
 		MatchId = context.MatchId,
-		Practice = context.Practice,
+		Practice = context.Practice == true,
 		Made = made,
 	}
 	if BallService.Launch(ball, from, velocity, shot) then

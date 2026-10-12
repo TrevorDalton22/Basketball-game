@@ -35,6 +35,17 @@ local savedWalkSpeed: number? = nil
 local shotToken = 0
 local touchButton: TextButton
 local touchScreenGui: ScreenGui
+local touchConnection: RBXScriptConnection? = nil
+
+local function stopTrackingTouch()
+	if touchConnection then
+		touchConnection:Disconnect()
+		touchConnection = nil
+	end
+	if touchButton then
+		touchButton.BackgroundTransparency = 0.1
+	end
+end
 
 local function getHumanoid(): Humanoid?
 	local character = player.Character
@@ -61,6 +72,8 @@ local function release(cancelled: boolean)
 	if cancelled then
 		ShotMeter.Cancel()
 	else
+		-- Provisional grade from our own clock; ShotMeter swaps in the server's
+		-- grade when the "Release" feedback arrives
 		local quality = BasketballMath.ClassifyRelease(hold / SHOT.FillTime)
 		ShotMeter.Finish(quality)
 	end
@@ -181,17 +194,19 @@ local function buildTouchButton()
 		if input.UserInputType ~= Enum.UserInputType.Touch and input.UserInputType ~= Enum.UserInputType.MouseButton1 then
 			return
 		end
+		-- Only the touch that started the shot may release it (a second finger
+		-- brushing the button must not cut the shot short)
+		local wasHolding = holding
 		begin()
-		if not holding then
+		if wasHolding or not holding then
 			return
 		end
+		stopTrackingTouch()
 		touchButton.BackgroundTransparency = 0.4
 		-- Track this exact touch so dragging off the button still releases
-		local connection
-		connection = input:GetPropertyChangedSignal("UserInputState"):Connect(function()
+		touchConnection = input:GetPropertyChangedSignal("UserInputState"):Connect(function()
 			if input.UserInputState == Enum.UserInputState.End or input.UserInputState == Enum.UserInputState.Cancel then
-				connection:Disconnect()
-				touchButton.BackgroundTransparency = 0.1
+				stopTrackingTouch()
 				release(false)
 			end
 		end)
@@ -240,6 +255,7 @@ function ShootController.Init()
 		holding = false
 		heldBall = nil
 		savedWalkSpeed = nil
+		stopTrackingTouch()
 		ShotMeter.Cancel()
 	end)
 end

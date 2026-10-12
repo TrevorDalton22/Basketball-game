@@ -33,11 +33,12 @@ This is a standalone project. It isn't connected to any other game.
 - **Match flow:** 3-2-1 countdown, 4-minute clock, first to 15.
   - **Overtime:** a tie when time runs out goes to "next basket wins". Overtime ends in a draw after 2 minutes.
   - **Buzzer beaters:** a shot already in the air when time runs out still counts.
-  - **20-second shot clock:** you can't stall with the ball.
+  - **20-second shot clock:** you can't stall with the ball. It resets on a change of possession or when a shot hits the rim or glass. Grabbing your own airball doesn't reset it.
   - **Check ball:** after every score or turnover, both players are reset to their spots.
   - **Out of bounds:** a ball or ball carrier that goes out is a turnover.
   - **Results screen:** shown at the end, then both players go back to the lobby.
-- **Leaving and resetting:** leaving the game or pressing **LEAVE MATCH** twice forfeits. Resetting your character is a turnover, and play waits up to 15 seconds for you to respawn.
+- **Leaving and resetting:** leaving the game or pressing **LEAVE MATCH** twice forfeits. Resetting your character is a turnover, and play waits up to 15 seconds for you to respawn. A shot already in the air still lands and counts. Resetting more than 3 times in one match forfeits it.
+- **No shots from behind the backboard:** the glass is in the way, so the shot is refused.
 - **Practice mode:** when a court has no match, anyone can shoot around with its ball. No points count.
 - **HUD:** scoreboard with a possession dot, shot clock, shot meter, queue panel, banners, toasts, results and context hints. Works on **PC, phone and controller**.
 
@@ -51,7 +52,7 @@ Progression (wins, losses, points and currency saved with DataStores) and the ex
 | Pick up the ball | Walk into it | Walk into it | Walk into it |
 | Shoot (hold, release in the green) | **E** | **R2** (or X / □) | **SHOOT** button |
 | Leave the queue | Backspace or the LEAVE button | B (○) | LEAVE button |
-| Leave the match (press twice) | LEAVE MATCH button | View / Share button | LEAVE MATCH button |
+| Leave the match (press twice) | LEAVE MATCH button | D-pad down | LEAVE MATCH button |
 
 ---
 
@@ -173,10 +174,10 @@ Click **File → Save to Roblox** (Ctrl+S).
    - [ ] The scoreboard shows both names, the scores, the game clock, "FIRST TO 15" and the **SHOT** clock.
    - [ ] Only the ball carrier can shoot. The other player can grab rebounds and loose balls. (Steals come in Phase 5.)
    - [ ] Shots from beyond the arc score **3** and shots inside score **2**. After a basket, the player who was scored on gets the ball at the top of the key.
-   - [ ] Holding the ball for 20 seconds without shooting gives the ball to the opponent (**SHOT CLOCK**).
+   - [ ] Keeping the ball for 20 seconds without hitting the rim gives it to the opponent (**SHOT CLOCK**).
    - [ ] Stepping out of bounds with the ball, or letting it roll out, is a turnover.
    - [ ] First to 15 wins. Lower `TargetScore` in `Config` to test faster. The results screen appears, then both players return to the lobby.
-   - [ ] **Reset** a character (Esc → Reset): that's a turnover, and play waits for them to respawn.
+   - [ ] **Reset** a character (Esc → Reset): that's a turnover, and play waits for them to respawn. A shot already in the air still counts. The 4th reset in a match forfeits it.
    - [ ] Press **LEAVE MATCH** twice: that's a forfeit, and the other player sees **VICTORY · Opponent forfeited**.
    - [ ] Close Player2's window mid-match: Player1 wins by forfeit.
    - [ ] On a pad, press **LEAVE** or Backspace: you're moved off the pad.
@@ -198,7 +199,8 @@ Every gameplay number is in **ReplicatedStorage › Shared › Config**. The mos
 |---|---|---|
 | `Match.TargetScore` | 15 | Points needed to win |
 | `Match.Duration` | 240 | Game clock in seconds (runs only while the ball is live) |
-| `Match.ShotClock` | 20 | Seconds one player may keep possession |
+| `Match.ShotClock` | 20 | Seconds per possession (resets on a rim touch) |
+| `Match.MaxResets` | 3 | Character resets allowed per match before it counts as a forfeit |
 | `Match.MakeItTakeIt` | false | `true`: the scorer keeps the ball |
 | `Scoring.InsideArc` / `OutsideArc` | 2 / 3 | Point values |
 | `Shot.FillTime` | 0.6 | Seconds for the meter to fill |
@@ -229,7 +231,7 @@ If you see a red error, copy it from the Output window and send it to me, includ
 |---|---|---|
 | Who holds the ball | Server (`BallService`) | One holder at a time. Pickups are refused right after a suspicious teleport. |
 | Release timing | Server's own measurement | The client's value may only nudge it by ±0.025 s to smooth out network lag. |
-| Make or miss | Server (`ShotService`) | Based on timing, distance and a defender in front. Then real physics plays the shot. |
+| Make or miss | Server (`ShotService`) | Based on timing, distance and a defender in front. Then real physics plays the shot. A decided miss counts only if it really bounces in off the rim or glass. |
 | Points | Server (`MatchService`) | Counted from a server-detected basket, once per shot, only for that match's shooter. |
 | Clock, shot clock, winner | Server (`MatchService`) | Published as attributes on the court model. |
 | Queue | Server (`QueueService`) | Checked by standing on the pad. |

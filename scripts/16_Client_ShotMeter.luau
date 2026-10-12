@@ -8,6 +8,7 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local Shared = ReplicatedStorage:WaitForChild("Shared")
 local Config = require(Shared:WaitForChild("Config"))
+local Net = require(Shared:WaitForChild("Net"))
 local UIKit = require(script.Parent:WaitForChild("UIKit"))
 
 local ShotMeter = {}
@@ -44,6 +45,17 @@ local function zone(parent: Instance, center: number, halfWidth: number, color: 
 end
 
 function ShotMeter.Init()
+	-- The server's grade is the real one: show it when it arrives
+	Net.Event("Feedback").OnClientEvent:Connect(function(kind: string, data: any)
+		if typeof(data) ~= "table" then
+			return
+		end
+		if kind == "Release" and typeof(data.Quality) == "string" then
+			ShotMeter.Finish(data.Quality)
+		elseif kind == "ShotRejected" then
+			ShotMeter.Cancel()
+		end
+	end)
 	billboard = UIKit.new("BillboardGui", {
 		Name = "StreetHoopsShotMeter",
 		Size = UDim2.fromOffset(34, 150),
