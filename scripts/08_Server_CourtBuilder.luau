@@ -77,6 +77,10 @@ end
 
 local DECOR = { CanCollide = false, CanQuery = false, CanTouch = false, CastShadow = false }
 
+-- Props outside the raised court slab stand on the plaza (world y ≈ 0.1).
+-- In court-local space (origin is at the court floor top) that is this height:
+local GROUND = 0.1 - C.FloorTop
+
 local function cylinderVertical(parent: Instance, name: string, height: number, diameter: number, bottomCenter: CFrame, color: Color3, material: Enum.Material?): Part
 	local cf = bottomCenter * CFrame.new(0, height / 2, 0) * CFrame.Angles(0, 0, math.rad(90))
 	local part = block(parent, name, Vector3.new(height, diameter, diameter), cf, color, material)
@@ -85,14 +89,15 @@ local function cylinderVertical(parent: Instance, name: string, height: number, 
 end
 
 -- Thin decorative strip between two world points (used for court lines and nets)
-local function strip(parent: Instance, a: Vector3, b: Vector3, width: number, height: number, color: Color3, extraLength: number?): Part?
+-- `height` is measured along `upHint` (default world up), `width` across it.
+local function strip(parent: Instance, a: Vector3, b: Vector3, width: number, height: number, color: Color3, extraLength: number?, upHint: Vector3?): Part?
 	local delta = b - a
 	local length = delta.Magnitude
 	if length < 1e-3 then
 		return nil
 	end
 	local mid = (a + b) / 2
-	local up = if math.abs(delta.Unit.Y) > 0.95 then Vector3.xAxis else Vector3.yAxis
+	local up = upHint or (if math.abs(delta.Unit.Y) > 0.95 then Vector3.xAxis else Vector3.yAxis)
 	local cf = CFrame.lookAt(mid, b, up)
 	return block(parent, "Line", Vector3.new(width, height, length + (extraLength or 0)), cf, color, Enum.Material.SmoothPlastic, DECOR)
 end
@@ -136,8 +141,12 @@ local function setupLighting()
 	Lighting.ShadowSoftness = 0.25
 
 	local function ensure(className: string, props: { [string]: any })
+		-- The Baseplate template already has some of these; restyle them instead
 		local existing = Lighting:FindFirstChildOfClass(className)
 		if existing then
+			for key, value in props do
+				(existing :: any)[key] = value
+			end
 			return
 		end
 		make(className, props, Lighting)
@@ -210,18 +219,19 @@ local function buildPark(parkFolder: Folder, anchor: CFrame)
 		decal:Destroy() -- remove the default spawn logo
 	end
 
-	-- Entrance arch over the spawn
-	local archCF = spawnCF * CFrame.new(0, 0, 9)
-	for _, x in { -10, 10 } do
+	-- Entrance arch on the walkway from the spawn to the court
+	local archCF = spawnCF * CFrame.new(0, -0.5, -6)
+	for _, x in { -12, 12 } do
 		block(parkFolder, "ArchPillar", Vector3.new(2, 16, 2), archCF * CFrame.new(x, 8, 0), PALETTE.Metal, Enum.Material.Metal)
 	end
-	local beam = block(parkFolder, "ArchSign", Vector3.new(22, 3.5, 1), archCF * CFrame.new(0, 17, 0), Config.UI.Panel, Enum.Material.SmoothPlastic)
+	local beam = block(parkFolder, "ArchSign", Vector3.new(26, 3.5, 1), archCF * CFrame.new(0, 17, 0), Config.UI.Panel, Enum.Material.SmoothPlastic)
 	surfaceText(beam, Enum.NormalId.Back, "STREET HOOPS", Config.UI.Accent, Config.UI.FontHeavy)
 	surfaceText(beam, Enum.NormalId.Front, "STREET HOOPS", Config.UI.Accent, Config.UI.FontHeavy)
 
 	-- Benches and trees around the lobby
-	bench(parkFolder, spawnCF * CFrame.new(-16, -0.5, 0) * CFrame.Angles(0, math.rad(90), 0))
-	bench(parkFolder, spawnCF * CFrame.new(16, -0.5, 0) * CFrame.Angles(0, math.rad(-90), 0))
+	-- Benches either side of the spawn, facing it
+	bench(parkFolder, spawnCF * CFrame.new(-16, -0.4, 0) * CFrame.Angles(0, math.rad(-90), 0))
+	bench(parkFolder, spawnCF * CFrame.new(16, -0.4, 0) * CFrame.Angles(0, math.rad(90), 0))
 	local treeSpots = {
 		Vector3.new(-50, 0, 10), Vector3.new(50, 0, 14), Vector3.new(-56, 0, -30),
 		Vector3.new(58, 0, -26), Vector3.new(-48, 0, 70), Vector3.new(52, 0, 74),
@@ -240,13 +250,14 @@ end
 --------------------------------------------------------------------------------
 
 local function courtLines(folder: Instance, origin: CFrame)
-	local y = 0.04
+	-- Layers: surface top 0.03, key paint top 0.06, lines 0.06–0.09
+	local y = 0.075
 	local w = C.LineWidth
 	local function P(x: number, z: number): Vector3
 		return origin:PointToWorldSpace(Vector3.new(x, y, z))
 	end
 	local function line(x1: number, z1: number, x2: number, z2: number)
-		strip(folder, P(x1, z1), P(x2, z2), w, 0.04, PALETTE.Line, w)
+		strip(folder, P(x1, z1), P(x2, z2), w, 0.03, PALETTE.Line, w)
 	end
 	local function arc(cx: number, cz: number, radius: number, fromDeg: number, toDeg: number, segments: number)
 		local prev: Vector3? = nil
@@ -254,7 +265,7 @@ local function courtLines(folder: Instance, origin: CFrame)
 			local a = math.rad(fromDeg + (toDeg - fromDeg) * i / segments)
 			local point = P(cx + radius * math.sin(a), cz + radius * math.cos(a))
 			if prev then
-				strip(folder, prev, point, w, 0.04, PALETTE.Line, w * 0.6)
+				strip(folder, prev, point, w, 0.03, PALETTE.Line, w * 0.6)
 			end
 			prev = point
 		end
@@ -306,9 +317,11 @@ local function buildHoop(folder: Instance, origin: CFrame)
 		CustomPhysicalProperties = PhysicalProperties.new(2, 0.3, 0.5, 1, 1),
 	})
 	board.CastShadow = false
-	local frontZ = C.BackboardZ + 0.01
+	local frontZ = C.BackboardZ + 0.012
+	local boardNormal = origin:VectorToWorldSpace(Vector3.zAxis)
 	local function boardLine(x1: number, y1: number, x2: number, y2: number, width: number)
-		strip(hoop, L(x1, y1, frontZ).Position, L(x2, y2, frontZ).Position, width, 0.02, PALETTE.Line, width)
+		-- Thin along the board normal, wide across the glass
+		strip(hoop, L(x1, y1, frontZ).Position, L(x2, y2, frontZ).Position, width, 0.02, PALETTE.Line, width, boardNormal)
 	end
 	-- Border
 	local ox, oy = bw / 2 - 0.12, bh / 2 - 0.12
@@ -337,7 +350,6 @@ local function buildHoop(folder: Instance, origin: CFrame)
 		local worldTangent = origin:VectorToWorldSpace(tangent)
 		block(hoop, "Rim", Vector3.new(C.RimTube, C.RimTube, segmentLength), CFrame.lookAt(worldPos, worldPos + worldTangent), PALETTE.Rim, Enum.Material.Metal, {
 			CustomPhysicalProperties = rimProps,
-			CollisionGroup = Config.Collision.Rim,
 		})
 	end
 	local bracketDepth = C.RimDistance - ringRadius - C.BackboardZ
@@ -360,6 +372,14 @@ local function buildHoop(folder: Instance, origin: CFrame)
 		local b2 = center + Vector3.new(bottomR * math.cos(nextA), -netDrop, bottomR * math.sin(nextA))
 		strip(hoop, origin:PointToWorldSpace(b1), origin:PointToWorldSpace(b2), 0.06, 0.06, netColor)
 	end
+
+	-- Every solid hoop part (rim, glass, supports) shares one collision group,
+	-- so a server-decided make can pass cleanly through it
+	for _, descendant in hoop:GetDescendants() do
+		if descendant:IsA("BasePart") then
+			descendant.CollisionGroup = Config.Collision.Hoop
+		end
+	end
 end
 
 local function buildFence(folder: Instance, origin: CFrame)
@@ -375,14 +395,14 @@ local function buildFence(folder: Instance, origin: CFrame)
 		local posts = math.max(1, math.floor(length / 8))
 		for i = 0, posts do
 			local p = a:Lerp(b, i / posts)
-			cylinderVertical(fence, "Post", height, 0.35, origin * CFrame.new(p), PALETTE.Metal, Enum.Material.Metal)
+			cylinderVertical(fence, "Post", height, 0.35, origin * CFrame.new(p + Vector3.new(0, GROUND, 0)), PALETTE.Metal, Enum.Material.Metal)
 		end
-		for _, y in { 0.4, height - 0.1 } do
+		for _, y in { GROUND + 0.4, GROUND + height - 0.1 } do
 			strip(fence, origin:PointToWorldSpace(a + Vector3.new(0, y, 0)), origin:PointToWorldSpace(b + Vector3.new(0, y, 0)), 0.2, 0.2, PALETTE.Metal)
 		end
-		local mid = (a + b) / 2 + Vector3.new(0, height / 2, 0)
+		local mid = (a + b) / 2 + Vector3.new(0, GROUND + height / 2, 0)
 		local worldMid = origin:PointToWorldSpace(mid)
-		block(fence, "Mesh", Vector3.new(0.08, height - 0.6, length), CFrame.lookAt(worldMid, origin:PointToWorldSpace(b + Vector3.new(0, height / 2, 0))), PALETTE.Fence, Enum.Material.DiamondPlate, {
+		block(fence, "Mesh", Vector3.new(0.08, height - 0.6, length), CFrame.lookAt(worldMid, origin:PointToWorldSpace(b + Vector3.new(0, GROUND + height / 2, 0))), PALETTE.Fence, Enum.Material.DiamondPlate, {
 			Transparency = 0.72,
 			CastShadow = false,
 		})
@@ -394,9 +414,8 @@ end
 
 local function buildPad(folder: Instance, origin: CFrame, side: "Home" | "Away", localPos: Vector3, color: Color3): (Part, TextLabel)
 	local size = Config.Queue.PadSize
-	-- Pads sit on the plaza (world y ≈ 0.1), slightly below the raised court floor
-	local plazaY = 0.1 - C.FloorTop
-	local cf = origin * CFrame.new(localPos + Vector3.new(0, plazaY + 0.06, 0))
+	-- Pads sit on the plaza, slightly below the raised court floor
+	local cf = origin * CFrame.new(localPos + Vector3.new(0, GROUND + 0.06, 0))
 	local pad = block(folder, side .. "Pad", Vector3.new(size, 0.12, size), cf, color, Enum.Material.Neon, {
 		CanCollide = false,
 		CanQuery = false,
@@ -404,7 +423,7 @@ local function buildPad(folder: Instance, origin: CFrame, side: "Home" | "Away",
 		Transparency = 0.15,
 	})
 	pad:SetAttribute("Side", side)
-	block(folder, side .. "PadBase", Vector3.new(size + 1, 0.1, size + 1), origin * CFrame.new(localPos + Vector3.new(0, plazaY + 0.02, 0)), Config.UI.Panel, Enum.Material.SmoothPlastic, DECOR)
+	block(folder, side .. "PadBase", Vector3.new(size + 1, 0.1, size + 1), origin * CFrame.new(localPos + Vector3.new(0, GROUND + 0.02, 0)), Config.UI.Panel, Enum.Material.SmoothPlastic, DECOR)
 
 	local billboard = make("BillboardGui", {
 		Name = "PadLabel",
@@ -439,9 +458,9 @@ local function buildCourt(courtsFolder: Folder, def: { Id: string, DisplayName: 
 	local slabD = C.Length + C.Runoff * 2
 	local floorCF = origin * CFrame.new(0, -C.FloorThickness / 2, C.Length / 2)
 	block(static, "Runoff", Vector3.new(slabW, C.FloorThickness, slabD), floorCF, PALETTE.Runoff, Enum.Material.Concrete)
-	block(static, "Surface", Vector3.new(C.Width, 0.02, C.Length), origin * CFrame.new(0, 0.01, C.Length / 2), PALETTE.Court, Enum.Material.SmoothPlastic, DECOR)
-	block(static, "Key", Vector3.new(C.KeyWidth, 0.02, C.FreeThrowDistance), origin * CFrame.new(0, 0.015, C.FreeThrowDistance / 2), PALETTE.Key, Enum.Material.SmoothPlastic, DECOR)
-	local centerPaint = block(static, "CenterPaint", Vector3.new(0.02, C.CenterCircleRadius * 2, C.CenterCircleRadius * 2), origin * CFrame.new(0, 0.015, C.Length) * CFrame.Angles(0, 0, math.rad(90)), PALETTE.Key, Enum.Material.SmoothPlastic, DECOR)
+	block(static, "Surface", Vector3.new(C.Width, 0.06, C.Length), origin * CFrame.new(0, 0, C.Length / 2), PALETTE.Court, Enum.Material.SmoothPlastic, DECOR)
+	block(static, "Key", Vector3.new(C.KeyWidth, 0.06, C.FreeThrowDistance), origin * CFrame.new(0, 0.03, C.FreeThrowDistance / 2), PALETTE.Key, Enum.Material.SmoothPlastic, DECOR)
+	local centerPaint = block(static, "CenterPaint", Vector3.new(0.06, C.CenterCircleRadius * 2, C.CenterCircleRadius * 2), origin * CFrame.new(0, 0.03, C.Length) * CFrame.Angles(0, 0, math.rad(90)), PALETTE.Key, Enum.Material.SmoothPlastic, DECOR)
 	centerPaint.Shape = Enum.PartType.Cylinder
 
 	courtLines(static, origin)
@@ -452,13 +471,13 @@ local function buildCourt(courtsFolder: Folder, def: { Id: string, DisplayName: 
 	local lx = hw + C.Runoff + 3
 	local target = origin:PointToWorldSpace(Vector3.new(0, 0, C.Length * 0.4))
 	for _, spot in { Vector3.new(-lx, 0, -2), Vector3.new(lx, 0, -2), Vector3.new(-lx, 0, C.Length - 4), Vector3.new(lx, 0, C.Length - 4) } do
-		lightPole(static, origin * CFrame.new(spot), target)
+		lightPole(static, origin * CFrame.new(spot + Vector3.new(0, GROUND, 0)), target)
 	end
 
 	-- Benches outside the sidelines
 	for _, x in { -(hw + C.Runoff + 3.5), hw + C.Runoff + 3.5 } do
 		local facing = if x < 0 then math.rad(-90) else math.rad(90)
-		bench(static, origin * CFrame.new(x, 0, C.Length * 0.45) * CFrame.Angles(0, facing, 0))
+		bench(static, origin * CFrame.new(x, GROUND, C.Length * 0.45) * CFrame.Angles(0, facing, 0))
 	end
 
 	-- Queue pads in front of the half-court line
@@ -470,7 +489,7 @@ local function buildCourt(courtsFolder: Folder, def: { Id: string, DisplayName: 
 	-- Court status sign over the entrance
 	local signZ = C.Length + C.Runoff + 1
 	for _, x in { -9, 9 } do
-		block(static, "SignPost", Vector3.new(0.8, 13, 0.8), origin * CFrame.new(x, 6.5, signZ), PALETTE.Metal, Enum.Material.Metal)
+		block(static, "SignPost", Vector3.new(0.8, 13, 0.8), origin * CFrame.new(x, GROUND + 6.5, signZ), PALETTE.Metal, Enum.Material.Metal)
 	end
 	local signCF = CFrame.lookAt(origin:PointToWorldSpace(Vector3.new(0, 11.5, signZ)), origin:PointToWorldSpace(Vector3.new(0, 11.5, signZ + 10)))
 	local sign = block(static, "StatusSign", Vector3.new(18, 4, 0.5), signCF, Config.UI.Panel, Enum.Material.SmoothPlastic)

@@ -1,5 +1,5 @@
 --!strict
--- ShotMeter (ModuleScript) — StarterPlayerScripts > ClientMain > ShotMeter
+-- ShotMeter (ModuleScript) — StarterPlayer > StarterPlayerScripts > ClientMain > ShotMeter
 -- Vertical timing meter that floats beside the local character while a shot
 -- is held. Purely visual: the server re-measures the hold and decides the shot.
 

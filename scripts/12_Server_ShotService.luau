@@ -66,29 +66,43 @@ local function makeChance(quality: string, distance: number, shooterPos: Vector3
 	return math.clamp(chance, 0.01, 0.99)
 end
 
--- Where the ball should cross the rim plane
-local function aimPoint(rim: Vector3, toRim: Vector3, made: boolean, quality: string, fraction: number): Vector3
+-- Where the ball should cross the rim plane.
+-- Decided misses cross outside the ring's tube centreline, so contact with the
+-- rim pushes the ball away from the hoop instead of rolling it in.
+local function aimPoint(rim: Vector3, toRim: Vector3, boardDir: Vector3, made: boolean, quality: string, fraction: number, distance: number): Vector3
 	local side = toRim:Cross(Vector3.yAxis)
 	local r = Config.Court.RimRadius
+	local outside = r + Config.Court.RimTube + Config.Ball.Radius * 0.35
+	local sideSign = if rng:NextNumber() < 0.5 then -1 else 1
+	-- From the wings/baseline one "side" points into the glass; always miss away from it
+	local towardBoard = side:Dot(boardDir)
+	if math.abs(towardBoard) > 0.35 then
+		sideSign = if towardBoard > 0 then -1 else 1
+	end
 	if made then
-		local jitter = side * rng:NextNumber(-0.12, 0.12) + toRim * rng:NextNumber(-0.12, 0.12)
-		return rim + jitter
+		return rim + side * rng:NextNumber(-0.12, 0.12) + toRim * rng:NextNumber(-0.12, 0.12)
 	end
 	if fraction < SHOT.AirballFraction then
-		-- Way too early: falls well short
-		return rim - toRim * rng:NextNumber(2.5, 4.5) - Vector3.new(0, 1, 0)
+		-- Way too early: falls short (never behind the shooter on close shots)
+		local short = math.min(rng:NextNumber(2.5, 4.5), 0.6 * math.max(distance - SHOT.ReleaseForward, 0))
+		return rim - toRim * short - Vector3.new(0, 1, 0)
 	elseif quality == "Early" then
-		return rim - toRim * (r * 0.95) + side * rng:NextNumber(-0.4, 0.4)
+		-- Front rim
+		return rim - toRim * outside + side * rng:NextNumber(-0.3, 0.3)
 	elseif quality == "Late" then
 		if fraction > 1 then
-			-- Very late: off the backboard
-			return rim + toRim * (r + 0.6) + Vector3.new(0, 1.2, 0) + side * rng:NextNumber(-0.6, 0.6)
+			-- Very late: off the glass well wide of the ring, so it caroms away
+			local wide = r + Config.Ball.Radius + rng:NextNumber(0.6, 1.4)
+			return rim + side * (sideSign * wide) + toRim * 1.05 + Vector3.new(0, 1.2, 0)
 		end
-		return rim + toRim * (r * 1.0) + side * rng:NextNumber(-0.4, 0.4)
+		-- Long: off the side of the back rim
+		return rim + side * (sideSign * outside) + toRim * 0.4
 	end
-	-- A good release that still rims out somewhere around the ring
-	local angle = rng:NextNumber(0, math.pi * 2)
-	return rim + (toRim * math.cos(angle) + side * math.sin(angle)) * (r * 0.98)
+	-- A good release that still rims out: off the side or the front of the rim
+	if rng:NextNumber() < 0.5 then
+		return rim + side * (sideSign * outside) + toRim * rng:NextNumber(-0.3, 0.3)
+	end
+	return rim - toRim * outside + side * rng:NextNumber(-0.4, 0.4)
 end
 
 local function resolveShot(player: Player, entry: Pending, clientHold: number?)
@@ -98,7 +112,11 @@ local function resolveShot(player: Player, entry: Pending, clientHold: number?)
 	end
 	local context = MatchService.GetShotContext(ball, player)
 	local root = CharacterService.GetRoot(player)
-	if not context or not root then
+	local court = ball.Court
+	local origin: CFrame = court.Origin
+	-- No shots from out of bounds in a match (BallService calls the turnover)
+	local outOfBounds = context ~= nil and not context.Practice and root ~= nil and not BasketballMath.IsInBounds(origin, root.Position, 0)
+	if not context or not root or outOfBounds or CharacterService.IsSuspicious(player) then
 		ball.Part:SetAttribute("Shooting", false)
 		return
 	end
@@ -114,8 +132,6 @@ local function resolveShot(player: Player, entry: Pending, clientHold: number?)
 	local fraction = hold / SHOT.FillTime
 	local quality = BasketballMath.ClassifyRelease(fraction)
 
-	local court = ball.Court
-	local origin: CFrame = court.Origin
 	local rim: Vector3 = court.RimCenter
 	local shooterPos = root.Position
 	local distance = BasketballMath.DistanceToRim(origin, shooterPos)
@@ -124,7 +140,8 @@ local function resolveShot(player: Player, entry: Pending, clientHold: number?)
 
 	local chance = makeChance(quality, distance, shooterPos, toRim, context.Defender)
 	local made = rng:NextNumber() < chance
-	local target = aimPoint(rim, toRim, made, quality, fraction)
+	local boardDir = origin:VectorToWorldSpace(Vector3.new(0, 0, -1)) -- from the rim toward the backboard
+	local target = aimPoint(rim, toRim, boardDir, made, quality, fraction, distance)
 
 	local from = shooterPos + Vector3.new(0, SHOT.ReleaseHeight, 0) + toRim * SHOT.ReleaseForward
 	local apexY = rim.Y + BasketballMath.ArcHeight(distance)
@@ -154,7 +171,7 @@ local function onShootStart(player: Player)
 		return
 	end
 	local ball = BallService.FindHeldBy(player)
-	if not ball or not MatchService.GetShotContext(ball, player) then
+	if not ball or CharacterService.IsSuspicious(player) or not MatchService.GetShotContext(ball, player) then
 		return
 	end
 	tokenCounter += 1

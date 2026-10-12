@@ -324,7 +324,7 @@ local function tryPickup(ball: Ball, now: number)
 	local bestDistance = math.huge
 	for _, player in Players:GetPlayers() do
 		local blockedUntil = ball.NoPickupUntil[player]
-		if blockedUntil and blockedUntil > now then
+		if (blockedUntil and blockedUntil > now) or CharacterService.IsSuspicious(player) then
 			continue
 		end
 		local root = CharacterService.GetRoot(player)

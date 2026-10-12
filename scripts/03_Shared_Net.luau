@@ -13,6 +13,7 @@ local EVENTS: { [string]: string } = {
 	ShootStart = "ShootStart", -- ()
 	ShootRelease = "ShootRelease", -- (holdTime: number)
 	LeaveQueue = "LeaveQueue", -- ()
+	LeaveMatch = "LeaveMatch", -- () forfeit the current match
 	-- server → client
 	Feedback = "Feedback", -- (kind: string, data: table)
 }

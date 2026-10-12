@@ -1,5 +1,5 @@
 --!strict
--- BallVisuals (ModuleScript) — StarterPlayerScripts > ClientMain > BallVisuals
+-- BallVisuals (ModuleScript) — StarterPlayer > StarterPlayerScripts > ClientMain > BallVisuals
 -- Cosmetic, local-only ball presentation: a dribble bounce while held, the ball
 -- raised during a shot, an outline so it is easy to spot, and a possession
 -- marker over the holder's head. None of this affects gameplay.
@@ -43,6 +43,7 @@ local function createVisual(ball: BasePart): Visual
 
 	local marker = UIKit.new("BillboardGui", {
 		Name = "PossessionMarker",
+		ResetOnSpawn = false,
 		Size = UDim2.fromOffset(120, 34),
 		StudsOffset = Vector3.new(0, 3.2, 0),
 		AlwaysOnTop = true,
@@ -91,6 +92,12 @@ end
 local function ensureVisuals()
 	for _, court in MatchClient.GetCourts() do
 		local ball = MatchClient.GetBall(court)
+		local existing = ball and visuals[ball]
+		if existing and existing.Marker.Parent == nil then
+			-- Marker was destroyed somehow; rebuild it
+			existing.Highlight:Destroy()
+			visuals[ball :: BasePart] = nil
+		end
 		if ball and not visuals[ball] then
 			visuals[ball] = createVisual(ball)
 			ball.Destroying:Connect(function()

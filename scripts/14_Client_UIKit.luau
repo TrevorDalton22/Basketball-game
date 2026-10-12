@@ -1,5 +1,5 @@
 --!strict
--- UIKit (ModuleScript) — StarterPlayerScripts > ClientMain > UIKit
+-- UIKit (ModuleScript) — StarterPlayer > StarterPlayerScripts > ClientMain > UIKit
 -- Tiny helpers so every screen shares the same look.
 
 local ReplicatedStorage = game:GetService("ReplicatedStorage")

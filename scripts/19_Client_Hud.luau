@@ -1,8 +1,9 @@
 --!strict
--- Hud (ModuleScript) — StarterPlayerScripts > ClientMain > Hud
--- All 2D interface: scoreboard, countdown/banners, toasts, queue panel,
--- results screen and the context hint bar. It only displays what the server
--- published (court attributes + Feedback events) and sends LeaveQueue.
+-- Hud (ModuleScript) — StarterPlayer > StarterPlayerScripts > ClientMain > Hud
+-- All 2D interface: scoreboard + shot clock, banners, toasts, queue panel,
+-- results screen, leave-match button and the context hint. It only displays
+-- what the server published (court attributes + Feedback events) and sends
+-- LeaveQueue / LeaveMatch requests.
 
 local ContextActionService = game:GetService("ContextActionService")
 local Players = game:GetService("Players")
@@ -22,11 +23,13 @@ local Hud = {}
 
 local THEME = Config.UI
 local player = Players.LocalPlayer
-local LEAVE_ACTION = "StreetHoops_LeaveQueue"
+local LEAVE_QUEUE_ACTION = "StreetHoops_LeaveQueue"
+local LEAVE_MATCH_ACTION = "StreetHoops_LeaveMatch"
+local MAX_TOASTS = 3
 
 local leaveQueue: RemoteEvent
+local leaveMatch: RemoteEvent
 
-local root: Frame
 -- One UIScale per top-level element so each scales around its own anchor point
 local scales: { UIScale } = {}
 local scoreboard: Frame
@@ -38,12 +41,16 @@ local homeBall: Frame
 local awayBall: Frame
 local clockLabel: TextLabel
 local subLabel: TextLabel
+local shotClock: Frame
+local shotClockLabel: TextLabel
+local leaveMatchButton: TextButton
 local banner: TextLabel
 local bannerSub: TextLabel
 local toastHolder: Frame
 local queuePanel: Frame
 local queueTitle: TextLabel
 local queueStatus: TextLabel
+local queueKeys: TextLabel
 local leaveButton: TextButton
 local results: Frame
 local resultsTitle: TextLabel
@@ -52,9 +59,56 @@ local resultsReason: TextLabel
 local hint: TextLabel
 
 local lastState: string? = nil
+local lastBannerMessage = ""
 local lastCountdown = -1
 local bannerToken = 0
-local leaveBound = false
+local leaveQueueBound = false
+local leaveMatchBound = false
+local confirmToken = 0
+local confirmPending = false
+local toastCount = 0
+
+--------------------------------------------------------------------------------
+-- Small helpers
+--------------------------------------------------------------------------------
+
+type InputKind = "Touch" | "Gamepad" | "Keyboard"
+
+local function inputKind(): InputKind
+	local last = UserInputService:GetLastInputType()
+	if last == Enum.UserInputType.Touch then
+		return "Touch"
+	elseif last.Name:find("Gamepad") then
+		return "Gamepad"
+	end
+	return "Keyboard"
+end
+
+local function shootPrompt(): string
+	local kind = inputKind()
+	if kind == "Touch" then
+		return "Hold SHOOT"
+	elseif kind == "Gamepad" then
+		return "Hold R2"
+	end
+	return "Hold E"
+end
+
+local function attrNumber(court: Model, name: string): number
+	local value = court:GetAttribute(name)
+	return if typeof(value) == "number" then value else 0
+end
+
+local function attrString(court: Model, name: string): string
+	local value = court:GetAttribute(name)
+	return if typeof(value) == "string" then value else ""
+end
+
+-- Wrapped, scaled text that never shrinks below a readable size
+local function readable(label: TextLabel, minSize: number, maxSize: number)
+	label.TextWrapped = true
+	UIKit.new("UITextSizeConstraint", { MinTextSize = minSize, MaxTextSize = maxSize, Parent = label })
+end
 
 --------------------------------------------------------------------------------
 -- Build
@@ -112,14 +166,14 @@ local function build()
 		ZIndexBehavior = Enum.ZIndexBehavior.Sibling,
 		Parent = player:WaitForChild("PlayerGui"),
 	})
-	root = UIKit.new("Frame", {
+	local root = UIKit.new("Frame", {
 		Name = "Root",
 		Size = UDim2.fromScale(1, 1),
 		BackgroundTransparency = 1,
 		Parent = gui,
 	})
 
-	-- Scoreboard ------------------------------------------------------------
+	-- Scoreboard (below the Roblox top bar) ----------------------------------
 	scoreboard = UIKit.panel({
 		Name = "Scoreboard",
 		AnchorPoint = Vector2.new(0.5, 0),
@@ -153,6 +207,38 @@ local function build()
 		Parent = scoreboard,
 	})
 
+	-- Shot clock pill hanging under the scoreboard
+	shotClock = UIKit.panel({
+		Name = "ShotClock",
+		AnchorPoint = Vector2.new(0.5, 0),
+		Position = UDim2.new(0.5, 0, 1, 6),
+		Size = UDim2.fromOffset(96, 28),
+		Visible = false,
+		Parent = scoreboard,
+	})
+	shotClockLabel = UIKit.text({
+		Size = UDim2.new(1, -12, 1, -8),
+		Position = UDim2.fromOffset(6, 4),
+		Font = THEME.FontHeavy,
+		Parent = shotClock,
+	})
+
+	-- Leave match (two taps to confirm)
+	leaveMatchButton = UIKit.new("TextButton", {
+		Name = "LeaveMatch",
+		AnchorPoint = Vector2.new(1, 0),
+		Position = UDim2.new(1, 0, 1, 6),
+		Size = UDim2.fromOffset(170, 28),
+		BackgroundColor3 = THEME.Panel,
+		BackgroundTransparency = 0.15,
+		Text = "LEAVE MATCH",
+		TextColor3 = THEME.TextDim,
+		Font = THEME.Font,
+		TextScaled = true,
+		Parent = scoreboard,
+	}, { UIKit.corner(8) :: Instance, UIKit.padding(5) })
+	UIKit.new("UITextSizeConstraint", { MaxTextSize = 14, Parent = leaveMatchButton })
+
 	-- Banner (countdown, scores, turnovers) ----------------------------------
 	banner = UIKit.text({
 		Name = "Banner",
@@ -175,12 +261,12 @@ local function build()
 		Parent = banner,
 	})
 
-	-- Toasts ------------------------------------------------------------------
+	-- Toasts: below the banner so they never cover it ------------------------
 	toastHolder = UIKit.new("Frame", {
 		Name = "Toasts",
 		AnchorPoint = Vector2.new(0.5, 0),
-		Position = UDim2.new(0.5, 0, 0, 148),
-		Size = UDim2.fromOffset(420, 200),
+		Position = UDim2.fromScale(0.5, 0.56),
+		Size = UDim2.fromOffset(420, 140),
 		BackgroundTransparency = 1,
 		Parent = root,
 	})
@@ -195,41 +281,49 @@ local function build()
 	queuePanel = UIKit.panel({
 		Name = "Queue",
 		AnchorPoint = Vector2.new(0.5, 1),
-		Position = UDim2.new(0.5, 0, 1, -28),
-		Size = UDim2.fromOffset(440, 92),
+		Position = UDim2.new(0.5, 0, 1, -24),
+		Size = UDim2.fromOffset(460, 104),
 		Visible = false,
 		Parent = root,
 	})
 	queueTitle = UIKit.text({
-		Position = UDim2.fromOffset(18, 12),
-		Size = UDim2.new(1, -170, 0, 26),
+		Position = UDim2.fromOffset(18, 10),
+		Size = UDim2.new(1, -180, 0, 26),
 		TextXAlignment = Enum.TextXAlignment.Left,
 		Font = THEME.FontHeavy,
 		Parent = queuePanel,
 	})
 	queueStatus = UIKit.text({
-		Position = UDim2.fromOffset(18, 44),
-		Size = UDim2.new(1, -170, 0, 20),
+		Position = UDim2.fromOffset(18, 40),
+		Size = UDim2.new(1, -180, 0, 36),
+		TextXAlignment = Enum.TextXAlignment.Left,
+		TextYAlignment = Enum.TextYAlignment.Top,
+		TextColor3 = THEME.Text,
+		Font = THEME.FontBody,
+		Parent = queuePanel,
+	})
+	readable(queueStatus, 13, 18)
+	queueKeys = UIKit.text({
+		Position = UDim2.fromOffset(18, 78),
+		Size = UDim2.new(1, -180, 0, 18),
 		TextXAlignment = Enum.TextXAlignment.Left,
 		TextColor3 = THEME.TextDim,
 		Font = THEME.FontBody,
 		Parent = queuePanel,
 	})
+	readable(queueKeys, 12, 15)
 	leaveButton = UIKit.new("TextButton", {
 		Name = "Leave",
 		AnchorPoint = Vector2.new(1, 0.5),
 		Position = UDim2.new(1, -16, 0.5, 0),
-		Size = UDim2.fromOffset(130, 52),
+		Size = UDim2.fromOffset(140, 60),
 		BackgroundColor3 = THEME.Away,
 		Text = "LEAVE",
 		TextColor3 = THEME.Text,
 		Font = THEME.FontHeavy,
-		TextSize = 20,
+		TextSize = 22,
 		Parent = queuePanel,
 	}, { UIKit.corner(12) })
-	leaveButton.Activated:Connect(function()
-		leaveQueue:FireServer()
-	end)
 
 	-- Results -------------------------------------------------------------------
 	results = UIKit.panel({
@@ -254,12 +348,13 @@ local function build()
 		Parent = results,
 	})
 	resultsReason = UIKit.text({
-		Position = UDim2.fromOffset(20, 160),
-		Size = UDim2.new(1, -40, 0, 22),
+		Position = UDim2.fromOffset(20, 158),
+		Size = UDim2.new(1, -40, 0, 24),
 		TextColor3 = THEME.TextDim,
 		Font = THEME.FontBody,
 		Parent = results,
 	})
+	readable(resultsReason, 14, 20)
 	UIKit.text({
 		Position = UDim2.fromOffset(20, 192),
 		Size = UDim2.new(1, -40, 0, 18),
@@ -269,17 +364,14 @@ local function build()
 		Parent = results,
 	})
 
-	-- Hint bar ------------------------------------------------------------------
+	-- Hint ----------------------------------------------------------------------
 	hint = UIKit.text({
 		Name = "Hint",
-		AnchorPoint = Vector2.new(0, 1),
-		Position = UDim2.new(0, 20, 1, -20),
-		Size = UDim2.fromOffset(520, 26),
-		TextXAlignment = Enum.TextXAlignment.Left,
 		Font = THEME.Font,
 		TextStrokeTransparency = 0.55,
 		Parent = root,
 	})
+	readable(hint, 13, 20)
 
 	local scaledElements: { GuiObject } = { scoreboard, banner, toastHolder, queuePanel, results, hint }
 	for _, element in scaledElements do
@@ -287,26 +379,53 @@ local function build()
 	end
 end
 
---------------------------------------------------------------------------------
--- Helpers
---------------------------------------------------------------------------------
-
-local function updateScale()
+local function layoutForDevice()
 	local camera = workspace.CurrentCamera
 	if not camera then
 		return
 	end
 	local viewport = camera.ViewportSize
-	local scale = math.clamp(math.min(viewport.X / 1280, viewport.Y / 760), 0.55, 1.25)
+	local touch = UserInputService.TouchEnabled
+	-- Phones get a higher floor so text stays readable
+	local minScale = if touch then 0.72 else 0.55
+	local scale = math.clamp(math.min(viewport.X / 1280, viewport.Y / 760), minScale, 1.25)
 	for _, uiScale in scales do
 		uiScale.Scale = scale
+	end
+	if touch then
+		-- Bottom-left is the thumbstick on phones; keep the hint between the sticks
+		hint.AnchorPoint = Vector2.new(0.5, 1)
+		hint.Position = UDim2.new(0.5, 0, 1, -14)
+		hint.Size = UDim2.fromOffset(380, 40)
+		hint.TextXAlignment = Enum.TextXAlignment.Center
+	else
+		hint.AnchorPoint = Vector2.new(0, 1)
+		hint.Position = UDim2.new(0, 20, 1, -18)
+		hint.Size = UDim2.fromOffset(560, 40)
+		hint.TextXAlignment = Enum.TextXAlignment.Left
 	end
 end
 
 function Hud.Toast(text: string, color: Color3?, seconds: number?)
+	-- Keep only the newest few
+	local existing = {}
+	for _, child in toastHolder:GetChildren() do
+		if child:IsA("Frame") then
+			table.insert(existing, child)
+		end
+	end
+	table.sort(existing, function(a, b)
+		return a.LayoutOrder < b.LayoutOrder
+	end)
+	for i = 1, #existing - (MAX_TOASTS - 1) do
+		existing[i]:Destroy()
+	end
+
+	toastCount += 1
 	local pill = UIKit.panel({
 		Size = UDim2.fromOffset(380, 38),
 		BackgroundTransparency = 0.08,
+		LayoutOrder = toastCount,
 		Parent = toastHolder,
 	})
 	local label = UIKit.text({
@@ -317,16 +436,6 @@ function Hud.Toast(text: string, color: Color3?, seconds: number?)
 		Font = THEME.FontHeavy,
 		Parent = pill,
 	})
-	pill.Position = UDim2.fromOffset(0, -10)
-	local children = toastHolder:GetChildren()
-	if #children > 5 then
-		for _, child in children do
-			if child:IsA("Frame") then
-				child:Destroy()
-				break
-			end
-		end
-	end
 	task.delay(seconds or 2.2, function()
 		if pill.Parent then
 			UIKit.tween(pill, 0.3, { BackgroundTransparency = 1 })
@@ -360,71 +469,103 @@ local function hideBanner()
 	banner.Visible = false
 end
 
-local function inputName(): string
-	local last = UserInputService:GetLastInputType()
-	if last == Enum.UserInputType.Touch then
-		return "the SHOOT button"
-	elseif last.Name:find("Gamepad") then
-		return "X (or R2)"
-	end
-	return "E"
+local function resetLeaveConfirm()
+	confirmPending = false
+	confirmToken += 1
+	leaveMatchButton.Text = "LEAVE MATCH"
+	leaveMatchButton.TextColor3 = THEME.TextDim
 end
 
-local function attrNumber(court: Model, name: string): number
-	local value = court:GetAttribute(name)
-	return if typeof(value) == "number" then value else 0
-end
-
-local function attrString(court: Model, name: string): string
-	local value = court:GetAttribute(name)
-	return if typeof(value) == "string" then value else ""
-end
-
-local function bindLeave(shouldBind: boolean)
-	if shouldBind == leaveBound then
+-- First press arms, second press within 3 s forfeits
+local function pressLeaveMatch()
+	if confirmPending then
+		resetLeaveConfirm()
+		leaveMatch:FireServer()
 		return
 	end
-	leaveBound = shouldBind
+	confirmPending = true
+	confirmToken += 1
+	local token = confirmToken
+	leaveMatchButton.Text = "TAP AGAIN TO FORFEIT"
+	leaveMatchButton.TextColor3 = THEME.Bad
+	Hud.Toast("Press again to forfeit the match", THEME.Bad, 2.5)
+	task.delay(3, function()
+		if token == confirmToken then
+			resetLeaveConfirm()
+		end
+	end)
+end
+
+local function bindAction(name: string, shouldBind: boolean, isBound: boolean, handler: () -> (), ...: Enum.KeyCode): boolean
+	if shouldBind == isBound then
+		return isBound
+	end
 	if shouldBind then
-		ContextActionService:BindAction(LEAVE_ACTION, function(_, state)
+		ContextActionService:BindAction(name, function(_, state)
 			if state == Enum.UserInputState.Begin then
-				leaveQueue:FireServer()
+				handler()
 				return Enum.ContextActionResult.Sink
 			end
 			return Enum.ContextActionResult.Pass
-		end, false, Enum.KeyCode.ButtonB, Enum.KeyCode.Backspace)
+		end, false, ...)
 	else
-		ContextActionService:UnbindAction(LEAVE_ACTION)
+		ContextActionService:UnbindAction(name)
 	end
+	return shouldBind
+end
+
+local function anyCourtOpen(): boolean
+	for _, court in MatchClient.GetCourts() do
+		if court:GetAttribute("State") == "Idle" then
+			return true
+		end
+	end
+	return false
 end
 
 --------------------------------------------------------------------------------
 -- Refresh from attributes
 --------------------------------------------------------------------------------
 
+local REASON_TEXT = {
+	Time = "Time expired",
+	Overtime = "Overtime winner",
+	Draw = "Overtime limit reached",
+	Cancelled = "A player left before tip-off",
+}
+
 local function refresh()
 	local court, role, side = MatchClient.GetMyCourt()
 	local state = if court then attrString(court, "State") else ""
+	local kind = inputKind()
 
 	-- Queue panel
 	local queued = role == "Queued" and court ~= nil
 	queuePanel.Visible = queued
-	bindLeave(queued)
+	leaveQueueBound = bindAction(LEAVE_QUEUE_ACTION, queued, leaveQueueBound, function()
+		leaveQueue:FireServer()
+	end, Enum.KeyCode.ButtonB, Enum.KeyCode.Backspace)
 	if queued and court then
-		local displayName = attrString(court, "DisplayName")
-		queueTitle.Text = ("%s · %s PAD"):format(displayName, (side or ""):upper())
+		queueTitle.Text = ("%s · %s PAD"):format(attrString(court, "DisplayName"), (side or ""):upper())
 		local otherId = attrNumber(court, if side == "Home" then "PadAwayUserId" else "PadHomeUserId")
 		if otherId ~= 0 then
 			local other = Players:GetPlayerByUserId(otherId)
-			queueStatus.Text = ("Opponent found: %s — get ready!"):format(if other then other.DisplayName else "Player")
+			queueStatus.Text = ("Opponent: %s — get ready!"):format(if other then other.DisplayName else "Player")
 		else
-			queueStatus.Text = "Waiting for an opponent to step on the other pad…"
+			queueStatus.Text = "Waiting for an opponent on the other pad…"
 		end
+		queueKeys.Text = if kind == "Gamepad" then "Press B (○) to leave" elseif kind == "Keyboard" then "Backspace or LEAVE to leave" else ""
 	end
 
 	-- Scoreboard
 	local playing = role == "Playing" and court ~= nil
 	scoreboard.Visible = playing
+	local canLeaveMatch = playing and state ~= "GameOver"
+	leaveMatchButton.Visible = canLeaveMatch
+	if not canLeaveMatch and confirmPending then
+		resetLeaveConfirm()
+	end
+	leaveMatchBound = bindAction(LEAVE_MATCH_ACTION, canLeaveMatch, leaveMatchBound, pressLeaveMatch, Enum.KeyCode.ButtonSelect)
 	if playing and court then
 		homeName.Text = attrString(court, "HomeName")
 		awayName.Text = attrString(court, "AwayName")
@@ -449,7 +590,7 @@ local function refresh()
 		local reason = attrString(court, "ResultReason")
 		results.Visible = true
 		if winner == 0 then
-			resultsTitle.Text = "MATCH CANCELLED"
+			resultsTitle.Text = if reason == "Draw" then "DRAW" else "MATCH CANCELLED"
 			resultsTitle.TextColor3 = THEME.TextDim
 		elseif winner == player.UserId then
 			resultsTitle.Text = "VICTORY"
@@ -459,58 +600,64 @@ local function refresh()
 			resultsTitle.TextColor3 = THEME.Bad
 		end
 		resultsScore.Text = ("%s  %d – %d  %s"):format(attrString(court, "HomeName"), attrNumber(court, "HomeScore"), attrNumber(court, "AwayScore"), attrString(court, "AwayName"))
-		local reasonText = {
-			Score = ("First to %d"):format(attrNumber(court, "TargetScore")),
-			Time = "Time expired",
-			Overtime = "Overtime winner",
-			Forfeit = "Opponent left the match",
-			Cancelled = "A player left before tip-off",
-		}
-		resultsReason.Text = reasonText[reason] or reason
+		if reason == "Score" then
+			resultsReason.Text = ("First to %d"):format(attrNumber(court, "TargetScore"))
+		elseif reason == "Forfeit" then
+			resultsReason.Text = if winner == player.UserId then "Opponent forfeited" else "You forfeited"
+		else
+			resultsReason.Text = REASON_TEXT[reason] or reason
+		end
 	else
 		results.Visible = false
 	end
 
-	-- State transitions that drive the banner
+	-- Banners driven by state changes (and by the dead-ball message, which can
+	-- change while the state stays Dead, e.g. "WAITING FOR PLAYER")
 	if state ~= lastState then
 		local previous = lastState
 		lastState = state
+		lastCountdown = -1
 		if playing and court then
 			if state == "Live" and (previous == "Countdown" or previous == "Check") then
 				showBanner(if previous == "Countdown" then "GO!" else "BALL IN", nil, THEME.Accent, 0.9)
-			elseif state == "Dead" then
-				local message = attrString(court, "Message")
-				if message ~= "" then
-					showBanner(message, nil, THEME.Text, Config.Match.DeadBallTime)
-				end
 			elseif state == "Check" then
 				showBanner("CHECK", "Get set…", THEME.TextDim, Config.Match.CheckTime)
 			elseif state == "GameOver" then
 				hideBanner()
 			end
-		elseif previous == "GameOver" or previous == "Live" then
+		elseif previous == "GameOver" or previous == "Live" or previous == "Dead" then
 			hideBanner()
 		end
-		lastCountdown = -1
+	end
+	if playing and court and state == "Dead" then
+		local message = attrString(court, "Message")
+		if message ~= "" and message ~= lastBannerMessage then
+			lastBannerMessage = message
+			showBanner(message, nil, THEME.Text, nil)
+		end
+	else
+		lastBannerMessage = ""
 	end
 
 	-- Hint
 	if playing then
 		if MatchClient.CanShootNow() then
-			hint.Text = ("Hold %s · release in the green to shoot"):format(inputName())
+			hint.Text = ("%s · release in the green to shoot"):format(shootPrompt())
 		else
 			hint.Text = ""
 		end
 	elseif queued then
 		hint.Text = ""
 	elseif MatchClient.GetHeldBall() then
-		hint.Text = ("Practice · Hold %s · release in the green to shoot"):format(inputName())
+		hint.Text = ("Practice · %s · release in the green to shoot"):format(shootPrompt())
+	elseif not anyCourtOpen() and #MatchClient.GetCourts() > 0 then
+		hint.Text = "All courts are in a match — the pads light up again when one opens"
 	else
 		hint.Text = "Step onto a glowing pad to queue for 1v1 · Grab a court ball to practice"
 	end
 end
 
--- Runs every frame, but only touches text that changes (clock + countdowns)
+-- Runs every frame, but only touches text that changes (clocks + countdowns)
 local function tick()
 	local court, role = MatchClient.GetMyCourt()
 	if not court then
@@ -525,6 +672,19 @@ local function tick()
 		if clockLabel.Text ~= text then
 			clockLabel.Text = text
 		end
+
+		local shotEndsAt = attrNumber(court, "ShotClockEndsAt")
+		local showShot = state == "Live" and shotEndsAt > 0
+		shotClock.Visible = showShot
+		if showShot then
+			local left = math.max(0, math.ceil(shotEndsAt - serverNow))
+			local shotText = ("SHOT %d"):format(left)
+			if shotClockLabel.Text ~= shotText then
+				shotClockLabel.Text = shotText
+				shotClockLabel.TextColor3 = if left <= 5 then THEME.Bad else THEME.Text
+			end
+		end
+
 		if state == "Countdown" then
 			local left = math.ceil(attrNumber(court, "PhaseEndsAt") - serverNow)
 			if left ~= lastCountdown and left > 0 then
@@ -554,8 +714,7 @@ local function onFeedback(kind: string, data: any)
 		data = {}
 	end
 	if kind == "Release" then
-		local quality = data.Quality
-		if quality == "Perfect" then
+		if data.Quality == "Perfect" then
 			Hud.Toast("PERFECT RELEASE", THEME.Perfect, 1.4)
 		end
 	elseif kind == "Score" then
@@ -571,33 +730,38 @@ local function onFeedback(kind: string, data: any)
 			Hud.Toast(("Opponent scored +%d"):format(points), THEME.Bad, 1.6)
 		end
 	elseif kind == "Turnover" then
+		local reason = if typeof(data.Reason) == "string" then data.Reason else "Turnover"
 		if data.LastTouchUserId == player.UserId then
-			Hud.Toast("Turnover — your ball went out", THEME.Bad, 1.8)
+			Hud.Toast(("%s — their ball"):format(reason), THEME.Bad, 1.8)
 		else
-			Hud.Toast("Turnover — your ball!", THEME.Good, 1.8)
+			Hud.Toast(("%s — your ball!"):format(reason), THEME.Good, 1.8)
 		end
 	elseif kind == "Overtime" then
 		showBanner("OVERTIME", "Next basket wins", THEME.Accent, 2)
 	elseif kind == "MatchStarting" then
 		Hud.Toast("Match found — 1v1!", THEME.Accent, 2)
-	elseif kind == "MatchEnded" then
-		-- Results screen is driven by attributes; nothing extra needed
 	elseif kind == "Notice" then
 		if typeof(data.Text) == "string" then
 			Hud.Toast(data.Text, THEME.TextDim, 2.5)
 		end
 	end
+	-- "MatchEnded": the results screen is driven by attributes
 end
 
 --------------------------------------------------------------------------------
 
 function Hud.Init()
 	leaveQueue = Net.Event("LeaveQueue")
+	leaveMatch = Net.Event("LeaveMatch")
 	build()
-	updateScale()
+	layoutForDevice()
+	leaveButton.Activated:Connect(function()
+		leaveQueue:FireServer()
+	end)
+	leaveMatchButton.Activated:Connect(pressLeaveMatch)
 	local camera = workspace.CurrentCamera
 	if camera then
-		camera:GetPropertyChangedSignal("ViewportSize"):Connect(updateScale)
+		camera:GetPropertyChangedSignal("ViewportSize"):Connect(layoutForDevice)
 	end
 	MatchClient.Changed:Connect(refresh)
 	UserInputService.LastInputTypeChanged:Connect(refresh)

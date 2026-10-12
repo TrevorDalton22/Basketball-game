@@ -1,5 +1,5 @@
 --!strict
--- ShootController (ModuleScript) — StarterPlayerScripts > ClientMain > ShootController
+-- ShootController (ModuleScript) — StarterPlayer > StarterPlayerScripts > ClientMain > ShootController
 -- Turns input (keyboard E, gamepad X/R2, touch SHOOT button) into shot requests.
 -- Sends exactly two events per shot: ShootStart on press, ShootRelease on let go.
 
@@ -34,6 +34,7 @@ local heldBall: BasePart? = nil
 local savedWalkSpeed: number? = nil
 local shotToken = 0
 local touchButton: TextButton
+local touchScreenGui: ScreenGui
 
 local function getHumanoid(): Humanoid?
 	local character = player.Character
@@ -116,6 +117,38 @@ local function onAction(_name: string, state: Enum.UserInputState, _input: Input
 	return Enum.ContextActionResult.Pass
 end
 
+-- Put SHOOT just left of the Roblox jump button, matching its size, on any screen
+local function placeTouchButton()
+	local playerGui = player:FindFirstChild("PlayerGui")
+	local touchGui = playerGui and playerGui:FindFirstChild("TouchGui")
+	local jump = touchGui and touchGui:FindFirstChild("JumpButton", true)
+	local gap = 14
+	if touchGui and touchGui:IsA("ScreenGui") and jump and jump:IsA("GuiObject") and jump.AbsoluteSize.X > 0 then
+		-- Share the touch controls' coordinate space so absolute positions line up
+		touchScreenGui.IgnoreGuiInset = touchGui.IgnoreGuiInset
+		pcall(function()
+			(touchScreenGui :: any).ScreenInsets = (touchGui :: any).ScreenInsets
+		end)
+		local jumpSize = jump.AbsoluteSize.X
+		local size = math.floor(jumpSize * 0.95)
+		touchButton.AnchorPoint = Vector2.zero
+		touchButton.Size = UDim2.fromOffset(size, size)
+		touchButton.Position = UDim2.fromOffset(jump.AbsolutePosition.X - size - gap, jump.AbsolutePosition.Y + jumpSize - size)
+		return
+	end
+	-- No touch controls found yet: use the same layout rule as PlayerModule's TouchJump
+	local camera = workspace.CurrentCamera
+	local viewport = if camera then camera.ViewportSize else Vector2.new(1280, 720)
+	local small = math.min(viewport.X, viewport.Y) <= 500
+	local jumpSize = if small then 70 else 120
+	local jumpX = if small then -95 else -170
+	local jumpY = if small then -90 else -210
+	local size = math.floor(jumpSize * 0.95)
+	touchButton.AnchorPoint = Vector2.zero
+	touchButton.Size = UDim2.fromOffset(size, size)
+	touchButton.Position = UDim2.new(1, jumpX - size - gap, 1, jumpY + jumpSize - size)
+end
+
 local function buildTouchButton()
 	local gui = UIKit.new("ScreenGui", {
 		Name = "StreetHoopsTouch",
@@ -127,19 +160,21 @@ local function buildTouchButton()
 	touchButton = UIKit.new("TextButton", {
 		Name = "Shoot",
 		AnchorPoint = Vector2.new(1, 1),
-		Position = UDim2.new(1, -36, 1, -210),
 		Size = UDim2.fromOffset(104, 104),
 		BackgroundColor3 = Config.UI.Accent,
 		BackgroundTransparency = 0.1,
 		Text = "SHOOT",
 		TextColor3 = Config.UI.Text,
 		Font = Config.UI.FontHeavy,
-		TextSize = 22,
+		TextScaled = true,
 		AutoButtonColor = false,
 		Visible = false,
 		Parent = gui,
 	})
-	UIKit.corner(52).Parent = touchButton
+	touchScreenGui = gui
+	UIKit.new("UICorner", { CornerRadius = UDim.new(0.5, 0), Parent = touchButton })
+	UIKit.new("UIPadding", { PaddingLeft = UDim.new(0.16, 0), PaddingRight = UDim.new(0.16, 0), Parent = touchButton })
+	UIKit.new("UITextSizeConstraint", { MaxTextSize = 22, Parent = touchButton })
 	UIKit.stroke(Color3.new(1, 1, 1), 3, 0.3).Parent = touchButton
 
 	touchButton.InputBegan:Connect(function(input)
@@ -186,9 +221,19 @@ function ShootController.Init()
 	end)
 
 	local function refreshTouch()
-		touchButton.Visible = UserInputService.TouchEnabled and MatchClient.CanShootNow()
+		local show = UserInputService.TouchEnabled and MatchClient.CanShootNow()
+		if show and not touchButton.Visible then
+			placeTouchButton()
+		end
+		touchButton.Visible = show
 	end
 	MatchClient.Changed:Connect(refreshTouch)
+	local camera = workspace.CurrentCamera
+	if camera then
+		camera:GetPropertyChangedSignal("ViewportSize"):Connect(function()
+			task.defer(placeTouchButton) -- after the touch controls re-layout
+		end)
+	end
 	refreshTouch()
 
 	player.CharacterAdded:Connect(function()

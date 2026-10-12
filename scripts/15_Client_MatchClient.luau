@@ -1,5 +1,5 @@
 --!strict
--- MatchClient (ModuleScript) — StarterPlayerScripts > ClientMain > MatchClient
+-- MatchClient (ModuleScript) — StarterPlayer > StarterPlayerScripts > ClientMain > MatchClient
 -- Read-only view of the server's court attributes. Works out which court the
 -- local player is queued on or playing on, and which ball they hold.
 -- Nothing here decides gameplay; it only reads what the server published.

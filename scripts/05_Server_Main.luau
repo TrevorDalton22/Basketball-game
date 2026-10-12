@@ -36,6 +36,7 @@ local function step(name: string, fn: (number) -> (), dt: number)
 end
 
 RunService.Heartbeat:Connect(function(dt)
+	step("CharacterService", CharacterService.Update, dt)
 	step("BallService", BallService.Update, dt)
 	step("MatchService", MatchService.Update, dt)
 	step("QueueService", QueueService.Update, dt)

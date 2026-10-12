@@ -1,7 +1,8 @@
 --!strict
 -- MatchService (ModuleScript) — ServerScriptService > Server > MatchService
--- One state machine per court. Owns scores, the game clock, check-ball resets,
--- forfeits and results. When a court has no match its ball is a practice ball.
+-- One state machine per court. Owns scores, the game clock, the shot clock,
+-- check-ball resets, forfeits and results. When a court has no match its ball
+-- is a practice ball.
 --
 --   Idle ──StartMatch──► Countdown ──► Live ◄──► Dead ─► Check ─┘
 --                                       │
@@ -22,6 +23,7 @@ local BasketballMath = require(Shared:WaitForChild("BasketballMath"))
 local Server = script.Parent
 local BallService = require(Server:WaitForChild("BallService"))
 local CharacterService = require(Server:WaitForChild("CharacterService"))
+local RemoteGuard = require(Server:WaitForChild("RemoteGuard"))
 
 local MatchService = {}
 
@@ -37,7 +39,7 @@ export type MatchResult = {
 	AwayUserId: number,
 	HomeScore: number,
 	AwayScore: number,
-	Reason: string, -- "Score" | "Time" | "Overtime" | "Forfeit" | "Cancelled"
+	Reason: string, -- "Score" | "Time" | "Overtime" | "Forfeit" | "Draw" | "Cancelled"
 }
 
 export type CourtState = {
@@ -53,6 +55,10 @@ export type CourtState = {
 	ClockRemaining: number,
 	ClockEndsAt: number,
 	Overtime: boolean,
+	OvertimeEndsAt: number,
+	Possessor: Player?, -- who the shot clock is running against
+	ShotClockEndsAt: number, -- 0 while not running
+	WaitingSince: number, -- Dead state: when we started waiting for a respawn (0 = not waiting)
 	AwardedShots: { [number]: boolean },
 	Message: string,
 	WinnerUserId: number,
@@ -127,7 +133,9 @@ local function updateSign(cs: CourtState)
 		local tag = if cs.State == "GameOver" then "FINAL" else "LIVE"
 		text = ("%s · %s\n%s  %d – %d  %s"):format(name, tag, homeName, cs.Scores.Home, cs.Scores.Away, awayName)
 	end
-	cs.Court.SignLabel.Text = text
+	if cs.Court.SignLabel.Text ~= text then
+		cs.Court.SignLabel.Text = text
+	end
 end
 
 -- Only write attributes that changed, so clients get no redundant updates
@@ -137,10 +145,12 @@ local function setAttr(model: Instance, name: string, value: any)
 	end
 end
 
--- Push every client-visible value to the court Model's attributes
+-- Push every client-visible value to the court Model's attributes.
+-- Message is written before State so a client reacting to the State change
+-- already sees the new message.
 local function publish(cs: CourtState)
 	local model: Model = cs.Court.Model
-	setAttr(model, "State", cs.State)
+	setAttr(model, "Message", cs.Message)
 	setAttr(model, "MatchId", cs.MatchId)
 	setAttr(model, "HomeUserId", if cs.Home then cs.Home.UserId else 0)
 	setAttr(model, "AwayUserId", if cs.Away then cs.Away.UserId else 0)
@@ -151,11 +161,12 @@ local function publish(cs: CourtState)
 	setAttr(model, "TargetScore", MATCH.TargetScore)
 	setAttr(model, "ClockEndsAt", cs.ClockEndsAt)
 	setAttr(model, "ClockRemaining", cs.ClockRemaining)
+	setAttr(model, "ShotClockEndsAt", cs.ShotClockEndsAt)
 	setAttr(model, "PhaseEndsAt", cs.PhaseEndsAt)
 	setAttr(model, "Overtime", cs.Overtime)
-	setAttr(model, "Message", cs.Message)
 	setAttr(model, "WinnerUserId", cs.WinnerUserId)
 	setAttr(model, "ResultReason", cs.ResultReason)
+	setAttr(model, "State", cs.State)
 	updateSign(cs)
 end
 
@@ -179,10 +190,16 @@ local function updatePractice(cs: CourtState)
 	if ball.State == "Scored" and os.clock() - ball.StateSince > Config.Ball.ScoredSettleTime then
 		BallService.SetState(ball, "Loose")
 	elseif ball.State == "Held" and ball.Holder then
-		-- Practice balls stay on the court
-		local root = CharacterService.GetRoot(ball.Holder)
-		if root and not BasketballMath.IsInBounds(origin, root.Position, COURT.Runoff) then
+		local holder: Player = ball.Holder
+		local root = CharacterService.GetRoot(holder)
+		local hogging = os.clock() - ball.StateSince > Config.Ball.PracticeHoldLimit
+		if hogging or (root and not BasketballMath.IsInBounds(origin, root.Position, COURT.Runoff)) then
+			-- Practice balls stay on the court, and nobody may sit on one
 			BallService.PlaceAt(ball, cs.Court.RackPosition, "Loose")
+			if hogging then
+				ball.NoPickupUntil[holder] = os.clock() + Config.Ball.PracticeHogCooldown
+				feedback:FireClient(holder, "Notice", { Text = "Practice ball returned so others get a turn" })
+			end
 		end
 	elseif ball.State == "Loose" or ball.State == "Dead" then
 		local position = ball.Part.Position
@@ -219,13 +236,26 @@ local function participantFilter(cs: CourtState): (Player) -> boolean
 	end
 end
 
+local function bothAlive(cs: CourtState): boolean
+	for _, player in participants(cs) do
+		if not CharacterService.IsAlive(player) then
+			return false
+		end
+	end
+	return true
+end
+
 -- Put both players on their check spots, frozen, ball in the offense's hands
 local function setupPossession(cs: CourtState, offense: Player)
 	local defense = opponentOf(cs, offense)
 	local hoopFloor = Vector3.new(0, 0, COURT.RimDistance)
+	-- Unfreeze first: teleporting an anchored character works, but this keeps
+	-- the order simple (move, then pin in place)
+	CharacterService.SetFrozen(offense, false)
 	CharacterService.Teleport(offense, spotCFrame(cs, COURT.OffenseSpot, hoopFloor))
 	CharacterService.SetFrozen(offense, true)
 	if defense then
+		CharacterService.SetFrozen(defense, false)
 		CharacterService.Teleport(defense, spotCFrame(cs, COURT.DefenseSpot, COURT.OffenseSpot))
 		CharacterService.SetFrozen(defense, true)
 	end
@@ -237,6 +267,7 @@ local function setupPossession(cs: CourtState, offense: Player)
 		BallService.PlaceAt(ball, cs.Court.RackPosition, "Dead")
 	end
 	cs.Offense = offense
+	cs.Possessor = offense
 end
 
 local function goLive(cs: CourtState)
@@ -246,9 +277,11 @@ local function goLive(cs: CourtState)
 	cs.State = "Live"
 	cs.Message = ""
 	cs.PhaseEndsAt = 0
+	local t = now()
 	if not cs.Overtime then
-		cs.ClockEndsAt = now() + cs.ClockRemaining
+		cs.ClockEndsAt = t + cs.ClockRemaining
 	end
+	cs.ShotClockEndsAt = t + MATCH.ShotClock
 	local ball = cs.Ball
 	ball.PickupFilter = participantFilter(cs)
 	ball.EnforceBounds = MATCH.OutOfBounds
@@ -256,21 +289,7 @@ local function goLive(cs: CourtState)
 	-- If the check-ball hand-off failed, let either player grab it
 	if ball.State == "Dead" then
 		BallService.SetState(ball, "Loose")
-	end
-	publish(cs)
-end
-
-local function deadBall(cs: CourtState, nextOffense: Player?, message: string)
-	pauseClock(cs)
-	cs.State = "Dead"
-	cs.Message = message
-	cs.PhaseEndsAt = now() + MATCH.DeadBallTime
-	cs.Offense = nextOffense or cs.Offense
-	local ball = cs.Ball
-	ball.PickupFilter = nil
-	ball.EnforceBounds = false
-	if ball.State ~= "Scored" then
-		BallService.SetState(ball, "Dead")
+		cs.Possessor = nil
 	end
 	publish(cs)
 end
@@ -282,6 +301,8 @@ local function endMatch(cs: CourtState, winner: Player?, reason: string)
 	pauseClock(cs)
 	cs.State = "GameOver"
 	cs.PhaseEndsAt = now() + MATCH.GameOverTime
+	cs.ShotClockEndsAt = 0
+	cs.WaitingSince = 0
 	cs.WinnerUserId = if winner then winner.UserId else 0
 	cs.ResultReason = reason
 	cs.Message = ""
@@ -289,8 +310,11 @@ local function endMatch(cs: CourtState, winner: Player?, reason: string)
 	ball.PickupFilter = nil
 	ball.EnforceBounds = false
 	BallService.SetState(ball, "Dead")
+	-- Freeze only players still standing on the court
 	for _, player in participants(cs) do
-		CharacterService.SetFrozen(player, true)
+		if CharacterService.IsAlive(player) then
+			CharacterService.SetFrozen(player, true)
+		end
 	end
 	publish(cs)
 
@@ -314,35 +338,7 @@ local function endMatch(cs: CourtState, winner: Player?, reason: string)
 	MatchService.MatchEnded:Fire(result)
 end
 
--- Return players to the lobby and reopen the court
-local function finish(cs: CourtState)
-	for _, side in { "Home", "Away" } do
-		local player: Player? = if side == "Home" then cs.Home else cs.Away
-		if player then
-			playerCourt[player] = nil
-			if player.Parent then
-				CharacterService.SetFrozen(player, false)
-				CharacterService.Teleport(player, cs.Court.ReturnSpots[side])
-			end
-		end
-	end
-	cs.State = "Idle"
-	cs.Home = nil
-	cs.Away = nil
-	cs.Offense = nil
-	cs.Scores = { Home = 0, Away = 0 }
-	cs.ClockRemaining = MATCH.Duration
-	cs.ClockEndsAt = 0
-	cs.PhaseEndsAt = 0
-	cs.Overtime = false
-	cs.AwardedShots = {}
-	cs.Message = ""
-	cs.WinnerUserId = 0
-	cs.ResultReason = ""
-	enterPractice(cs)
-	publish(cs)
-end
-
+-- Clock hit zero: decide the game or go to overtime
 local function endByTime(cs: CourtState)
 	if cs.Scores.Home ~= cs.Scores.Away then
 		local winner = if cs.Scores.Home > cs.Scores.Away then cs.Home else cs.Away
@@ -351,6 +347,7 @@ local function endByTime(cs: CourtState)
 	end
 	-- Tied at the buzzer: next basket wins
 	cs.Overtime = true
+	cs.OvertimeEndsAt = now() + MATCH.OvertimeLimit
 	cs.ClockRemaining = 0
 	cs.ClockEndsAt = 0
 	cs.Message = "OVERTIME · Next basket wins"
@@ -358,23 +355,96 @@ local function endByTime(cs: CourtState)
 	publish(cs)
 end
 
-local function onParticipantGone(player: Player, reason: string)
+-- Stop play (after a score, turnover, reset or death). Ends the game instead if
+-- the clock ran out in the same moment.
+local function deadBall(cs: CourtState, nextOffense: Player?, message: string)
+	pauseClock(cs)
+	cs.Message = message
+	if not cs.Overtime and cs.ClockRemaining <= 0 then
+		endByTime(cs)
+		if cs.State == "GameOver" then
+			return
+		end
+	end
+	cs.State = "Dead"
+	cs.PhaseEndsAt = now() + MATCH.DeadBallTime
+	cs.ShotClockEndsAt = 0
+	cs.WaitingSince = 0
+	cs.Offense = nextOffense or cs.Offense
+	local ball = cs.Ball
+	ball.PickupFilter = nil
+	ball.EnforceBounds = false
+	if ball.State ~= "Scored" then
+		BallService.SetState(ball, "Dead")
+	end
+	publish(cs)
+end
+
+-- Return players to the lobby and reopen the court
+local function finish(cs: CourtState)
+	for _, side in { "Home", "Away" } do
+		local player: Player? = if side == "Home" then cs.Home else cs.Away
+		if player then
+			playerCourt[player] = nil
+			CharacterService.SetFrozen(player, false)
+			CharacterService.SetInMatch(player, false)
+			if player.Parent then
+				local root = CharacterService.GetRoot(player)
+				-- Only move players who are still near the court (not a fresh respawn)
+				if root and BasketballMath.IsInBounds(cs.Court.Origin, root.Position, COURT.Runoff + 4) then
+					CharacterService.Teleport(player, cs.Court.ReturnSpots[side])
+				end
+			end
+		end
+	end
+	cs.State = "Idle"
+	cs.Home = nil
+	cs.Away = nil
+	cs.Offense = nil
+	cs.Possessor = nil
+	cs.Scores = { Home = 0, Away = 0 }
+	cs.ClockRemaining = MATCH.Duration
+	cs.ClockEndsAt = 0
+	cs.ShotClockEndsAt = 0
+	cs.PhaseEndsAt = 0
+	cs.WaitingSince = 0
+	cs.Overtime = false
+	cs.OvertimeEndsAt = 0
+	cs.AwardedShots = {}
+	cs.Message = ""
+	cs.WinnerUserId = 0
+	cs.ResultReason = ""
+	enterPractice(cs)
+	publish(cs)
+end
+
+-- A participant left the game or chose to leave the match
+local function onParticipantLeft(player: Player)
+	local cs = playerCourt[player]
+	if not cs or cs.State == "GameOver" or cs.State == "Idle" then
+		return
+	end
+	local other = opponentOf(cs, player)
+	if cs.State == "Countdown" or not other or not other.Parent then
+		endMatch(cs, nil, "Cancelled")
+	else
+		endMatch(cs, other, "Forfeit")
+	end
+end
+
+-- A participant's character died (reset, fell, flung). Not a forfeit: the
+-- ball goes to the opponent and play waits for the respawn.
+local function onParticipantDied(player: Player)
 	local cs = playerCourt[player]
 	if not cs then
 		return
 	end
-	if cs.State == "GameOver" or cs.State == "Idle" then
-		return
-	end
-	if cs.State == "Countdown" then
-		endMatch(cs, nil, "Cancelled")
-		return
-	end
-	local other = opponentOf(cs, player)
-	if other and other.Parent then
-		endMatch(cs, other, reason)
-	else
-		endMatch(cs, nil, "Cancelled")
+	local state = cs.State
+	if state == "Live" then
+		tell(cs, "Turnover", { Reason = "Player reset", LastTouchUserId = player.UserId })
+		deadBall(cs, opponentOf(cs, player), "RESET · TURNOVER")
+	elseif state == "Countdown" or state == "Check" then
+		deadBall(cs, cs.Offense, "WAITING FOR PLAYER")
 	end
 end
 
@@ -422,14 +492,8 @@ local function onScored(ball: any, shot: any)
 		endMatch(cs, shot.Shooter, "Score")
 	elseif cs.Overtime then
 		endMatch(cs, shot.Shooter, "Overtime")
-	elseif cs.ClockEndsAt > 0 and cs.ClockEndsAt - now() <= 0 then
-		-- Buzzer beater landed after the clock ran out
-		pauseClock(cs)
-		endByTime(cs)
-		if cs.State == "Live" then
-			deadBall(cs, opponentOf(cs, shot.Shooter), "OVERTIME · Next basket wins")
-		end
 	else
+		-- deadBall also settles a buzzer-beater that landed after the clock ran out
 		local nextOffense = if MATCH.MakeItTakeIt then shot.Shooter else opponentOf(cs, shot.Shooter)
 		deadBall(cs, nextOffense, ("+%d  %s"):format(shot.Points, shot.Shooter.DisplayName))
 	end
@@ -460,6 +524,19 @@ local function onLost(ball: any)
 	end
 end
 
+local function onPickedUp(ball: any, player: Player)
+	local cs = courtStateForBall(ball)
+	if not cs or cs.State ~= "Live" then
+		return
+	end
+	-- A new possession restarts the shot clock; re-grabbing your own miss does not
+	if cs.Possessor ~= player then
+		cs.Possessor = player
+		cs.ShotClockEndsAt = now() + MATCH.ShotClock
+		publish(cs)
+	end
+end
+
 --------------------------------------------------------------------------------
 -- Public API
 --------------------------------------------------------------------------------
@@ -480,6 +557,10 @@ function MatchService.Init(courts: { any })
 			ClockRemaining = MATCH.Duration,
 			ClockEndsAt = 0,
 			Overtime = false,
+			OvertimeEndsAt = 0,
+			Possessor = nil,
+			ShotClockEndsAt = 0,
+			WaitingSince = 0,
 			AwardedShots = {},
 			Message = "",
 			WinnerUserId = 0,
@@ -494,14 +575,14 @@ function MatchService.Init(courts: { any })
 	BallService.Scored:Connect(onScored)
 	BallService.OutOfBounds:Connect(onOutOfBounds)
 	BallService.Lost:Connect(onLost)
+	BallService.PickedUp:Connect(onPickedUp)
 
 	-- A departed player stays referenced by their court until finish() clears it
-	Players.PlayerRemoving:Connect(function(player)
-		onParticipantGone(player, "Forfeit")
-	end)
-	CharacterService.Died:Connect(function(player)
-		if MATCH.ForfeitOnDeath then
-			onParticipantGone(player, "Forfeit")
+	Players.PlayerRemoving:Connect(onParticipantLeft)
+	CharacterService.Died:Connect(onParticipantDied)
+	Net.Event("LeaveMatch").OnServerEvent:Connect(function(player)
+		if RemoteGuard.Allow(player) then
+			onParticipantLeft(player)
 		end
 	end)
 end
@@ -530,10 +611,15 @@ function MatchService.StartMatch(cs: CourtState, home: Player, away: Player): bo
 	cs.Away = away
 	playerCourt[home] = cs
 	playerCourt[away] = cs
+	CharacterService.SetInMatch(home, true)
+	CharacterService.SetInMatch(away, true)
 	cs.Scores = { Home = 0, Away = 0 }
 	cs.ClockRemaining = MATCH.Duration
 	cs.ClockEndsAt = 0
+	cs.ShotClockEndsAt = 0
+	cs.WaitingSince = 0
 	cs.Overtime = false
+	cs.OvertimeEndsAt = 0
 	cs.AwardedShots = {}
 	cs.WinnerUserId = 0
 	cs.ResultReason = ""
@@ -585,6 +671,68 @@ local function sweepIntruders(cs: CourtState)
 	end
 end
 
+local function updateLive(cs: CourtState, t: number)
+	local ball = cs.Ball
+	-- Game clock (a shot already in the air when it expires still counts)
+	if not cs.Overtime and cs.ClockEndsAt > 0 and t >= cs.ClockEndsAt then
+		local shot = ball.Shot
+		local buzzerBeater = ball.State == "InFlight" and shot ~= nil and shot.MatchId == cs.MatchId
+		if not buzzerBeater then
+			pauseClock(cs)
+			endByTime(cs)
+			if cs.State ~= "Live" then
+				return
+			end
+		end
+	end
+	-- Overtime cannot last forever
+	if cs.Overtime and cs.OvertimeEndsAt > 0 and t >= cs.OvertimeEndsAt and ball.State ~= "InFlight" then
+		endMatch(cs, nil, "Draw")
+		return
+	end
+	-- Shot clock: only expires while someone is holding the ball
+	if cs.ShotClockEndsAt > 0 and t >= cs.ShotClockEndsAt and (ball.State :: string) == "Held" then
+		local holder = ball.Holder
+		tell(cs, "Turnover", { Reason = "Shot clock", LastTouchUserId = if holder then holder.UserId else 0 })
+		deadBall(cs, opponentOf(cs, holder), "SHOT CLOCK")
+	end
+end
+
+local function updateDead(cs: CourtState, t: number)
+	if t < cs.PhaseEndsAt then
+		return
+	end
+	if not bothAlive(cs) then
+		-- Someone is respawning; give them a fair window, then it's a forfeit
+		if cs.WaitingSince == 0 then
+			cs.WaitingSince = t
+			cs.Message = "WAITING FOR PLAYER"
+			publish(cs)
+		elseif t - cs.WaitingSince > MATCH.RespawnWait then
+			for _, player in participants(cs) do
+				if not CharacterService.IsAlive(player) then
+					local other = opponentOf(cs, player)
+					endMatch(cs, other, "Forfeit")
+					return
+				end
+			end
+		end
+		return
+	end
+	local offense = cs.Offense
+	if not offense or not offense.Parent or not sideOf(cs, offense) then
+		offense = cs.Home
+	end
+	if offense then
+		setupPossession(cs, offense)
+	end
+	cs.State = "Check"
+	cs.Message = ""
+	cs.WaitingSince = 0
+	cs.PhaseEndsAt = t + MATCH.CheckTime
+	publish(cs)
+end
+
 function MatchService.Update(dt: number)
 	local t = now()
 	sweepTimer += dt
@@ -597,34 +745,14 @@ function MatchService.Update(dt: number)
 		local state = cs.State
 		if state == "Idle" then
 			updatePractice(cs)
-		elseif state == "Countdown" then
+		elseif state == "Countdown" or state == "Check" then
 			if t >= cs.PhaseEndsAt then
 				goLive(cs)
 			end
 		elseif state == "Live" then
-			if not cs.Overtime and cs.ClockEndsAt > 0 and t >= cs.ClockEndsAt then
-				local ball = cs.Ball
-				local shot = ball.Shot
-				local buzzerBeater = ball.State == "InFlight" and shot ~= nil and shot.MatchId == cs.MatchId
-				if not buzzerBeater then
-					pauseClock(cs)
-					endByTime(cs)
-				end
-			end
+			updateLive(cs, t)
 		elseif state == "Dead" then
-			if t >= cs.PhaseEndsAt then
-				local offense = cs.Offense
-				if offense and offense.Parent and (offense == cs.Home or offense == cs.Away) then
-					setupPossession(cs, offense)
-				end
-				cs.State = "Check"
-				cs.PhaseEndsAt = t + MATCH.CheckTime
-				publish(cs)
-			end
-		elseif state == "Check" then
-			if t >= cs.PhaseEndsAt then
-				goLive(cs)
-			end
+			updateDead(cs, t)
 		elseif state == "GameOver" then
 			if t >= cs.PhaseEndsAt then
 				finish(cs)

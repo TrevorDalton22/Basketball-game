@@ -72,6 +72,8 @@ Config.Ball = {
 
 	LooseTimeout = 12, -- untouched loose ball in a match gets reset
 	PracticeIdleReset = 25, -- untouched practice ball returns to the rack
+	PracticeHoldLimit = 15, -- nobody may hog the practice ball longer than this
+	PracticeHogCooldown = 3, -- after hitting the limit, that player waits this long to grab it again
 	KillHeight = -30, -- ball below this world height is reset
 	FlightTimeout = 5, -- a shot that never resolves becomes a loose ball
 	ScoredSettleTime = 0.7, -- practice: ball becomes grabbable again after a make
@@ -81,12 +83,15 @@ Config.Shot = {
 	-- Timing meter: hold to fill, release on the green zone.
 	FillTime = 0.6, -- seconds for the meter to go from 0 to 1
 	IdealFraction = 0.82, -- centre of the green (perfect) zone
-	PerfectWindow = 0.045, -- ± around the ideal
+	PerfectWindow = 0.05, -- ± around the ideal
 	GoodWindow = 0.13, -- ± around the ideal
 	MaxHoldFraction = 1.15, -- the shot auto-releases (late) past this
 	AirballFraction = 0.4, -- releasing below this is an airball
 
-	ClientTimeTolerance = 0.2, -- how far the client's hold time may differ from the server's measurement
+	-- The server measures the hold itself. The client's (more precise) value may
+	-- only nudge that measurement by this much, to absorb normal network jitter.
+	-- Keep it below the perfect half-window (PerfectWindow * FillTime = 0.03 s).
+	ClientTimeTolerance = 0.025,
 	MinShotInterval = 0.35, -- rate limit between shot starts
 	ReleaseHeight = 2.4, -- launch point above the HRP
 	ReleaseForward = 0.9,
@@ -123,8 +128,22 @@ Config.Match = {
 	CheckTime = 1.2, -- players frozen at their spots before play resumes
 	GameOverTime = 6, -- results screen before players return to the lobby
 	MakeItTakeIt = false, -- false: the scored-on player gets the ball
-	ForfeitOnDeath = true, -- resetting your character during a match forfeits it
 	OutOfBounds = true,
+	ShotClock = 20, -- one player may hold possession this long before it's a turnover
+	OvertimeLimit = 120, -- overtime with no basket ends as a draw after this
+	RespawnWait = 15, -- a participant who died must be back within this, or forfeits
+}
+
+Config.Players = {
+	RespawnTime = 2, -- seconds (Roblox default is 5)
+}
+
+Config.AntiCheat = {
+	-- Horizontal speed (studs/s) above which a player is treated as teleporting.
+	-- Normal running is Movement.WalkSpeed (18); this leaves room for lag and knockback.
+	MaxFlatSpeed = 45,
+	SampleInterval = 0.25,
+	PenaltyTime = 1.5, -- after a suspicious move: no pickups or shots for this long
 }
 
 Config.Queue = {
@@ -145,11 +164,14 @@ Config.Movement = {
 -- Collision groups (registered by CharacterService on the server)
 Config.Collision = {
 	Players = "Players",
+	-- Match participants: bump into each other, but not into bystanders
+	InMatch = "InMatch",
 	Ball = "Ball",
 	-- A shot the server already decided is a make flies in this group, which
-	-- ignores the rim ring, so physics drift can never turn a make into a miss.
+	-- ignores the hoop (rim, backboard, supports), so physics can never turn a
+	-- decided make into a miss.
 	BallMake = "BallMake",
-	Rim = "Rim",
+	Hoop = "Hoop",
 }
 
 Config.Remote = {

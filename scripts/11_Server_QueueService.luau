@@ -35,7 +35,9 @@ local pollTimer = 0
 local function isStandingOn(pad: BasePart, root: BasePart): boolean
 	local localPos = pad.CFrame:PointToObjectSpace(root.Position)
 	local half = QUEUE.PadSize / 2 + 0.5
-	return math.abs(localPos.X) <= half and math.abs(localPos.Z) <= half and localPos.Y > 0 and localPos.Y < 8
+	-- Generous height range so hopping on the pad never drops the claim
+	local maxHeight = Config.Movement.JumpHeight + 8
+	return math.abs(localPos.X) <= half and math.abs(localPos.Z) <= half and localPos.Y > -1 and localPos.Y < maxHeight
 end
 
 local function claimOf(player: Player): (Queue?, string?)
