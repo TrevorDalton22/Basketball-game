@@ -62,6 +62,7 @@ export type CourtState = {
 	-- A reset during a live shot: the turnover waits until the shot lands
 	PendingTurnover: boolean,
 	PendingOffense: Player?,
+	PendingResetter: Player?,
 	Resets: { [Player]: number },
 	AwardedShots: { [number]: boolean },
 	Message: string,
@@ -309,6 +310,7 @@ local function endMatch(cs: CourtState, winner: Player?, reason: string)
 	cs.WaitingSince = 0
 	cs.PendingTurnover = false
 	cs.PendingOffense = nil
+	cs.PendingResetter = nil
 	cs.WinnerUserId = if winner then winner.UserId else 0
 	cs.ResultReason = reason
 	cs.Message = ""
@@ -367,6 +369,7 @@ local function deadBall(cs: CourtState, nextOffense: Player?, message: string)
 	pauseClock(cs)
 	cs.PendingTurnover = false
 	cs.PendingOffense = nil
+	cs.PendingResetter = nil
 	cs.Message = message
 	if not cs.Overtime and cs.ClockRemaining <= 0 then
 		endByTime(cs)
@@ -418,6 +421,7 @@ local function finish(cs: CourtState)
 	cs.WaitingSince = 0
 	cs.PendingTurnover = false
 	cs.PendingOffense = nil
+	cs.PendingResetter = nil
 	cs.Resets = {}
 	cs.Overtime = false
 	cs.OvertimeEndsAt = 0
@@ -467,15 +471,17 @@ local function onParticipantDied(player: Player)
 		return
 	end
 	if state == "Live" then
-		tell(cs, "Turnover", { Reason = "Player reset", LastTouchUserId = player.UserId })
 		local ball = cs.Ball
 		local shot = ball.Shot
 		if ball.State == "InFlight" and shot ~= nil and shot.MatchId == cs.MatchId then
-			-- Let the shot in the air land first: a reset must never cancel a basket
+			-- Let the shot in the air land first: a reset must never cancel a
+			-- basket. The turnover (and its message) waits until it misses.
 			cs.PendingTurnover = true
 			cs.PendingOffense = opponentOf(cs, player)
+			cs.PendingResetter = player
 			return
 		end
+		tell(cs, "Turnover", { Reason = "Player reset", LastTouchUserId = player.UserId })
 		deadBall(cs, opponentOf(cs, player), "RESET · TURNOVER")
 	elseif state == "Countdown" or state == "Check" then
 		deadBall(cs, cs.Offense, "WAITING FOR PLAYER")
@@ -564,8 +570,8 @@ local function onPickedUp(ball: any, player: Player)
 		return
 	end
 	-- A new possession restarts the shot clock, and so does a shot that hit the
-	-- rim or glass. Re-grabbing your own airball does not.
-	if cs.Possessor ~= player or ball.TouchedHoop then
+	-- rim. Re-grabbing your own airball (or a glass-only miss) does not.
+	if cs.Possessor ~= player or ball.TouchedRim then
 		cs.Possessor = player
 		cs.ShotClockEndsAt = now() + MATCH.ShotClock
 		publish(cs)
@@ -598,6 +604,7 @@ function MatchService.Init(courts: { any })
 			WaitingSince = 0,
 			PendingTurnover = false,
 			PendingOffense = nil,
+			PendingResetter = nil,
 			Resets = {},
 			AwardedShots = {},
 			Message = "",
@@ -658,6 +665,7 @@ function MatchService.StartMatch(cs: CourtState, home: Player, away: Player): bo
 	cs.WaitingSince = 0
 	cs.PendingTurnover = false
 	cs.PendingOffense = nil
+	cs.PendingResetter = nil
 	cs.Resets = {}
 	cs.Overtime = false
 	cs.OvertimeEndsAt = 0
@@ -737,6 +745,8 @@ local function updateLive(cs: CourtState, t: number)
 	end
 	-- A reset happened while a shot was in the air; it has landed now
 	if cs.PendingTurnover and (ball.State :: string) ~= "InFlight" then
+		local resetter = cs.PendingResetter
+		tell(cs, "Turnover", { Reason = "Player reset", LastTouchUserId = if resetter then resetter.UserId else 0 })
 		deadBall(cs, cs.PendingOffense, "RESET · TURNOVER")
 		return
 	end

@@ -33,6 +33,7 @@ local startedAt = 0
 local heldBall: BasePart? = nil
 local savedWalkSpeed: number? = nil
 local shotToken = 0
+local lastBeganAt = -math.huge
 local touchButton: TextButton
 local touchScreenGui: ScreenGui
 local touchConnection: RBXScriptConnection? = nil
@@ -84,6 +85,10 @@ local function begin()
 	if holding or not MatchClient.CanShootNow() then
 		return
 	end
+	-- Mirror the server's rate limit so we never show a meter for a shot it would drop
+	if os.clock() - lastBeganAt < SHOT.MinShotInterval + 0.05 then
+		return
+	end
 	local ball = MatchClient.GetHeldBall()
 	local humanoid = getHumanoid()
 	if not ball or not humanoid or humanoid.Health <= 0 then
@@ -92,9 +97,10 @@ local function begin()
 	holding = true
 	heldBall = ball
 	startedAt = os.clock()
+	lastBeganAt = startedAt
 	shotToken += 1
-	shootStart:FireServer()
-	ShotMeter.Begin()
+	shootStart:FireServer(shotToken)
+	ShotMeter.Begin(shotToken)
 
 	if humanoid.WalkSpeed > Config.Movement.ShootingWalkSpeed then
 		savedWalkSpeed = humanoid.WalkSpeed
@@ -250,6 +256,15 @@ function ShootController.Init()
 		end)
 	end
 	refreshTouch()
+
+	Net.Event("Feedback").OnClientEvent:Connect(function(kind: string, data: any)
+		if kind == "ShotRejected" and typeof(data) == "table" and data.Token == shotToken and holding then
+			holding = false
+			heldBall = nil
+			restoreWalkSpeed()
+			stopTrackingTouch()
+		end
+	end)
 
 	player.CharacterAdded:Connect(function()
 		holding = false

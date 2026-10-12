@@ -10,7 +10,7 @@ local Net = {}
 
 local EVENTS: { [string]: string } = {
 	-- client → server
-	ShootStart = "ShootStart", -- ()
+	ShootStart = "ShootStart", -- (shotNumber: number) echoed back in feedback
 	ShootRelease = "ShootRelease", -- (holdTime: number)
 	LeaveQueue = "LeaveQueue", -- ()
 	LeaveMatch = "LeaveMatch", -- () forfeit the current match

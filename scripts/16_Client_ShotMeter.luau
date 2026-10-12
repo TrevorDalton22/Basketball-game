@@ -22,6 +22,7 @@ local container: Frame
 local fill: Frame
 local label: TextLabel
 local hideToken = 0
+local currentShot = 0 -- shot number of the meter on screen; replies for older shots are ignored
 
 -- Meter height represents 0 .. MaxHoldFraction
 local function toScale(fraction: number): number
@@ -49,6 +50,9 @@ function ShotMeter.Init()
 	Net.Event("Feedback").OnClientEvent:Connect(function(kind: string, data: any)
 		if typeof(data) ~= "table" then
 			return
+		end
+		if data.Token ~= currentShot then
+			return -- a late reply about an earlier shot
 		end
 		if kind == "Release" and typeof(data.Quality) == "string" then
 			ShotMeter.Finish(data.Quality)
@@ -123,7 +127,8 @@ local function attach(): boolean
 	return true
 end
 
-function ShotMeter.Begin()
+function ShotMeter.Begin(shotNumber: number)
+	currentShot = shotNumber
 	hideToken += 1
 	if not attach() then
 		return

@@ -56,6 +56,8 @@ export type Ball = {
 	-- miss only counts if it physically bounced in, and a rim touch resets the
 	-- shot clock (like real basketball).
 	TouchedHoop: boolean,
+	-- Same, but the ring itself (a glass-only touch does not reset the shot clock)
+	TouchedRim: boolean,
 }
 
 -- (ball, player)
@@ -186,10 +188,20 @@ function BallService.Create(court: any): Ball
 		EnforceBounds = false,
 		LooseTimeout = BALL.LooseTimeout,
 		TouchedHoop = false,
+		TouchedRim = false,
 	}
 	part.Touched:Connect(function(hit)
-		if hit.CollisionGroup == Config.Collision.Hoop and (ball.State == "InFlight" or ball.State == "Loose") then
-			ball.TouchedHoop = true
+		if hit.CollisionGroup ~= Config.Collision.Hoop or (ball.State ~= "InFlight" and ball.State ~= "Loose") then
+			return
+		end
+		-- Bumping the hoop from underneath on the way up can never be part of a
+		-- ball dropping in, so it does not count as a touch
+		if part.Position.Y < court.RimCenter.Y - Config.Court.RimTube then
+			return
+		end
+		ball.TouchedHoop = true
+		if hit.Name == "Rim" then
+			ball.TouchedRim = true
 		end
 	end)
 	freePhysics(ball)
@@ -259,6 +271,7 @@ function BallService.Release(ball: Ball, newState: BallState?)
 	local wasHeld = ball.State == "Held"
 	freePhysics(ball)
 	ball.TouchedHoop = false
+	ball.TouchedRim = false
 	if wasHeld and ball.Holder then
 		ball.NoPickupUntil[ball.Holder] = os.clock() + 0.3
 	end
@@ -271,6 +284,7 @@ end
 function BallService.PlaceAt(ball: Ball, position: Vector3, newState: BallState?)
 	freePhysics(ball)
 	ball.TouchedHoop = false
+	ball.TouchedRim = false
 	setHolder(ball, nil)
 	ball.Shot = nil
 	ball.Part.CFrame = CFrame.new(position)
@@ -304,6 +318,7 @@ function BallService.Launch(ball: Ball, from: Vector3, velocity: Vector3, shot: 
 	end
 	freePhysics(ball)
 	ball.TouchedHoop = false
+	ball.TouchedRim = false
 	setHolder(ball, nil)
 	local part = ball.Part
 	part.CFrame = CFrame.new(from)
@@ -398,7 +413,10 @@ local function updateBall(ball: Ball, now: number)
 			local shot = ball.Shot
 			-- A decided make always counts; a decided miss only if it really
 			-- bounced in off the rim or glass
-			local legit = shot ~= nil and (shot.Made or ball.TouchedHoop)
+			-- (a crossing this far out means the ball is overlapping the ring right now,
+			-- even if the Touched event has not been delivered yet)
+			local touchingRing = flat >= Config.Court.RimRadius - Config.Ball.Radius
+			local legit = shot ~= nil and (shot.Made or ball.TouchedHoop or touchingRing)
 			if flat <= Config.Court.RimRadius - 0.05 and legit then
 				setState(ball, "Scored")
 				ball.LastPosition = position

@@ -33,12 +33,12 @@ This is a standalone project. It isn't connected to any other game.
 - **Match flow:** 3-2-1 countdown, 4-minute clock, first to 15.
   - **Overtime:** a tie when time runs out goes to "next basket wins". Overtime ends in a draw after 2 minutes.
   - **Buzzer beaters:** a shot already in the air when time runs out still counts.
-  - **20-second shot clock:** you can't stall with the ball. It resets on a change of possession or when a shot hits the rim or glass. Grabbing your own airball doesn't reset it.
+  - **20-second shot clock:** you can't stall with the ball. It resets on a change of possession or when a shot hits the rim. Grabbing your own airball, or a miss that only hit the glass, doesn't reset it.
   - **Check ball:** after every score or turnover, both players are reset to their spots.
   - **Out of bounds:** a ball or ball carrier that goes out is a turnover.
   - **Results screen:** shown at the end, then both players go back to the lobby.
 - **Leaving and resetting:** leaving the game or pressing **LEAVE MATCH** twice forfeits. Resetting your character is a turnover, and play waits up to 15 seconds for you to respawn. A shot already in the air still lands and counts. Resetting more than 3 times in one match forfeits it.
-- **No shots from behind the backboard:** the glass is in the way, so the shot is refused.
+- **No shots from behind or right beside the backboard:** the glass is in the way, so the shot is refused and a message says why.
 - **Practice mode:** when a court has no match, anyone can shoot around with its ball. No points count.
 - **HUD:** scoreboard with a possession dot, shot clock, shot meter, queue panel, banners, toasts, results and context hints. Works on **PC, phone and controller**.
 
@@ -174,7 +174,7 @@ Click **File → Save to Roblox** (Ctrl+S).
    - [ ] The scoreboard shows both names, the scores, the game clock, "FIRST TO 15" and the **SHOT** clock.
    - [ ] Only the ball carrier can shoot. The other player can grab rebounds and loose balls. (Steals come in Phase 5.)
    - [ ] Shots from beyond the arc score **3** and shots inside score **2**. After a basket, the player who was scored on gets the ball at the top of the key.
-   - [ ] Keeping the ball for 20 seconds without hitting the rim gives it to the opponent (**SHOT CLOCK**).
+   - [ ] Keeping possession for 20 seconds without hitting the rim gives the ball to the opponent (**SHOT CLOCK**).
    - [ ] Stepping out of bounds with the ball, or letting it roll out, is a turnover.
    - [ ] First to 15 wins. Lower `TargetScore` in `Config` to test faster. The results screen appears, then both players return to the lobby.
    - [ ] **Reset** a character (Esc → Reset): that's a turnover, and play waits for them to respawn. A shot already in the air still counts. The 4th reset in a match forfeits it.
@@ -199,7 +199,7 @@ Every gameplay number is in **ReplicatedStorage › Shared › Config**. The mos
 |---|---|---|
 | `Match.TargetScore` | 15 | Points needed to win |
 | `Match.Duration` | 240 | Game clock in seconds (runs only while the ball is live) |
-| `Match.ShotClock` | 20 | Seconds per possession (resets on a rim touch) |
+| `Match.ShotClock` | 20 | Seconds per possession (also resets when a shot hits the rim) |
 | `Match.MaxResets` | 3 | Character resets allowed per match before it counts as a forfeit |
 | `Match.MakeItTakeIt` | false | `true`: the scorer keeps the ball |
 | `Scoring.InsideArc` / `OutsideArc` | 2 / 3 | Point values |

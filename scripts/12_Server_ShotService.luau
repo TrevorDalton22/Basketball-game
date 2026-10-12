@@ -23,7 +23,9 @@ local ShotService = {}
 local SHOT = Config.Shot
 local MAX_HOLD_TIME = SHOT.FillTime * SHOT.MaxHoldFraction
 
-type Pending = { Ball: any, StartedAt: number, Token: number }
+-- Token: server-side id for the auto-release timer
+-- ClientToken: the client's shot number, echoed back so it can match replies
+type Pending = { Ball: any, StartedAt: number, Token: number, ClientToken: number }
 
 local pending: { [Player]: Pending } = {}
 local lastShotAt: { [Player]: number } = {}
@@ -84,7 +86,7 @@ local function aimPoint(rim: Vector3, toRim: Vector3, boardDir: Vector3, made: b
 		sideSign = if towardBoard > 0 then -1 else 1
 	end
 	-- Shooting from beside/behind the board, the "front" of the rim is next to the glass
-	local frontNearBoard = (-toRim):Dot(boardDir) > 0.3
+	local frontNearBoard = (-toRim):Dot(boardDir) > 0.15
 
 	local function sideMiss(): Vector3
 		return rim + side * (sideSign * outside) + toRim * rng:NextNumber(-0.3, 0.3)
@@ -142,7 +144,7 @@ local function resolveShot(player: Player, entry: Pending, clientHold: number?)
 	local origin: CFrame = court.Origin
 	local function reject(reason: string)
 		ball.Part:SetAttribute("Shooting", false)
-		feedback:FireClient(player, "ShotRejected", { Reason = reason })
+		feedback:FireClient(player, "ShotRejected", { Reason = reason, Token = entry.ClientToken })
 	end
 	if not context or not root then
 		reject("")
@@ -150,17 +152,17 @@ local function resolveShot(player: Player, entry: Pending, clientHold: number?)
 	end
 	-- No shots from out of bounds in a match (BallService calls the turnover)
 	if not context.Practice and not BasketballMath.IsInBounds(origin, root.Position, 0) then
-		reject("Out of bounds")
+		reject("") -- the out-of-bounds turnover message explains it
 		return
 	end
 	if CharacterService.IsSuspicious(player) then
 		reject("")
 		return
 	end
-	-- No shots from behind the backboard: the glass is in the way
+	-- No shots from behind (or right beside) the backboard: the glass is in the way
 	local localPos = origin:PointToObjectSpace(root.Position)
-	local boardHalf = Config.Court.BackboardSize.X / 2 + Config.Ball.Radius + 0.5
-	if localPos.Z < Config.Court.BackboardZ and math.abs(localPos.X) <= boardHalf then
+	local boardHalf = Config.Court.BackboardSize.X / 2 + 3.5
+	if localPos.Z < Config.Court.BackboardZ + 0.3 and math.abs(localPos.X) <= boardHalf then
 		reject("No shots from behind the backboard")
 		return
 	end
@@ -201,26 +203,37 @@ local function resolveShot(player: Player, entry: Pending, clientHold: number?)
 		Made = made,
 	}
 	if BallService.Launch(ball, from, velocity, shot) then
-		feedback:FireClient(player, "Release", { Quality = quality, Fraction = fraction, Points = points })
+		feedback:FireClient(player, "Release", { Quality = quality, Fraction = fraction, Points = points, Token = entry.ClientToken })
 	end
 end
 
-local function onShootStart(player: Player)
-	if not RemoteGuard.Allow(player) or pending[player] then
+local function onShootStart(player: Player, clientToken: any)
+	if not RemoteGuard.Allow(player) then
+		return
+	end
+	local shotNumber: number = if RemoteGuard.IsNumber(clientToken, 0, 1e9) then clientToken else 0
+	local function refuse()
+		-- Tell the client so its meter does not show a shot that never happened
+		feedback:FireClient(player, "ShotRejected", { Reason = "", Token = shotNumber })
+	end
+	if pending[player] then
+		refuse()
 		return
 	end
 	local now = os.clock()
 	local last = lastShotAt[player]
 	if last and now - last < SHOT.MinShotInterval then
+		refuse()
 		return
 	end
 	local ball = BallService.FindHeldBy(player)
 	if not ball or CharacterService.IsSuspicious(player) or not MatchService.GetShotContext(ball, player) then
+		refuse()
 		return
 	end
 	tokenCounter += 1
 	local token = tokenCounter
-	pending[player] = { Ball = ball, StartedAt = now, Token = token }
+	pending[player] = { Ball = ball, StartedAt = now, Token = token, ClientToken = shotNumber }
 	lastShotAt[player] = now
 	ball.Part:SetAttribute("Shooting", true)
 

@@ -25,7 +25,7 @@ local THEME = Config.UI
 local player = Players.LocalPlayer
 local LEAVE_QUEUE_ACTION = "StreetHoops_LeaveQueue"
 local LEAVE_MATCH_ACTION = "StreetHoops_LeaveMatch"
-local MAX_TOASTS = 3
+local maxToasts = 3 -- lowered on short phone screens so toasts never cover the hint
 
 local leaveQueue: RemoteEvent
 local leaveMatch: RemoteEvent
@@ -402,6 +402,11 @@ local function layoutForDevice()
 	banner.Position = UDim2.new(0.5, 0, 0, bannerY)
 	local toastY = math.max(0.56 * viewport.Y, bannerY + (55 + 34) * scale + 6)
 	toastHolder.Position = UDim2.new(0.5, 0, 0, toastY)
+	local hintTop = viewport.Y - (14 + 40 * scale) - 4
+	maxToasts = if toastY + 126 * scale > hintTop then 2 else 3
+	-- Results panel sits below the scoreboard (which stays visible at game over)
+	local resultsTop = 66 + (68 + 6) * scale + 6
+	results.Position = UDim2.new(0.5, 0, 0, math.max(0.45 * viewport.Y, resultsTop + 115 * scale))
 	if touch then
 		-- Bottom-left is the thumbstick on phones; keep the hint between the sticks
 		hint.AnchorPoint = Vector2.new(0.5, 1)
@@ -427,7 +432,7 @@ function Hud.Toast(text: string, color: Color3?, seconds: number?)
 	table.sort(existing, function(a, b)
 		return a.LayoutOrder < b.LayoutOrder
 	end)
-	for i = 1, #existing - (MAX_TOASTS - 1) do
+	for i = 1, #existing - (maxToasts - 1) do
 		existing[i]:Destroy()
 	end
 
@@ -479,10 +484,14 @@ local function hideBanner()
 	banner.Visible = false
 end
 
+local function leaveMatchLabel(): string
+	return if inputKind() == "Gamepad" then "LEAVE MATCH (D-PAD ↓)" else "LEAVE MATCH"
+end
+
 local function resetLeaveConfirm()
 	confirmPending = false
 	confirmToken += 1
-	leaveMatchButton.Text = "LEAVE MATCH"
+	leaveMatchButton.Text = leaveMatchLabel()
 	leaveMatchButton.TextColor3 = THEME.TextDim
 end
 
@@ -496,7 +505,7 @@ local function pressLeaveMatch()
 	confirmPending = true
 	confirmToken += 1
 	local token = confirmToken
-	leaveMatchButton.Text = "PRESS AGAIN TO FORFEIT"
+	leaveMatchButton.Text = if inputKind() == "Gamepad" then "PRESS ↓ AGAIN TO FORFEIT" else "PRESS AGAIN TO FORFEIT"
 	leaveMatchButton.TextColor3 = THEME.Bad
 	Hud.Toast("Press again to forfeit the match", THEME.Bad, 2.5)
 	task.delay(3, function()
@@ -574,6 +583,8 @@ local function refresh()
 	leaveMatchButton.Visible = canLeaveMatch
 	if not canLeaveMatch and confirmPending then
 		resetLeaveConfirm()
+	elseif not confirmPending then
+		leaveMatchButton.Text = leaveMatchLabel()
 	end
 	leaveMatchBound = bindAction(LEAVE_MATCH_ACTION, canLeaveMatch, leaveMatchBound, pressLeaveMatch, Enum.KeyCode.DPadDown)
 	if playing and court then
