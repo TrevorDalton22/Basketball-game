@@ -1,0 +1,61 @@
+--!strict
+-- Net (ModuleScript) — ReplicatedStorage > Shared > Net
+-- One place that names every remote. The server creates them on startup;
+-- clients wait for them. Never create remotes anywhere else.
+
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local RunService = game:GetService("RunService")
+
+local Net = {}
+
+local EVENTS: { [string]: string } = {
+	-- client → server
+	ShootStart = "ShootStart", -- ()
+	ShootRelease = "ShootRelease", -- (holdTime: number)
+	LeaveQueue = "LeaveQueue", -- ()
+	-- server → client
+	Feedback = "Feedback", -- (kind: string, data: table)
+}
+Net.Events = EVENTS
+
+local FOLDER_NAME = "Remotes"
+
+local function getFolder(): Folder
+	if RunService:IsServer() then
+		local folder = ReplicatedStorage:FindFirstChild(FOLDER_NAME)
+		if not folder then
+			local newFolder = Instance.new("Folder")
+			newFolder.Name = FOLDER_NAME
+			newFolder.Parent = ReplicatedStorage
+			folder = newFolder
+		end
+		return folder :: Folder
+	end
+	return ReplicatedStorage:WaitForChild(FOLDER_NAME) :: Folder
+end
+
+-- Server: call once at startup before any client can use the remotes.
+function Net.CreateAll()
+	assert(RunService:IsServer(), "Net.CreateAll is server-only")
+	local folder = getFolder()
+	for _, name in Net.Events do
+		if not folder:FindFirstChild(name) then
+			local remote = Instance.new("RemoteEvent")
+			remote.Name = name
+			remote.Parent = folder
+		end
+	end
+end
+
+function Net.Event(name: string): RemoteEvent
+	assert(Net.Events[name] ~= nil, "Unknown remote: " .. name)
+	local folder = getFolder()
+	if RunService:IsServer() then
+		local remote = folder:FindFirstChild(name)
+		assert(remote and remote:IsA("RemoteEvent"), "Remote not created yet: " .. name)
+		return remote
+	end
+	return folder:WaitForChild(name) :: RemoteEvent
+end
+
+return Net
