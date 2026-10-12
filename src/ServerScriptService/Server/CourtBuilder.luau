@@ -394,7 +394,9 @@ end
 
 local function buildPad(folder: Instance, origin: CFrame, side: "Home" | "Away", localPos: Vector3, color: Color3): (Part, TextLabel)
 	local size = Config.Queue.PadSize
-	local cf = origin * CFrame.new(localPos + Vector3.new(0, 0.06, 0))
+	-- Pads sit on the plaza (world y ≈ 0.1), slightly below the raised court floor
+	local plazaY = 0.1 - C.FloorTop
+	local cf = origin * CFrame.new(localPos + Vector3.new(0, plazaY + 0.06, 0))
 	local pad = block(folder, side .. "Pad", Vector3.new(size, 0.12, size), cf, color, Enum.Material.Neon, {
 		CanCollide = false,
 		CanQuery = false,
@@ -402,7 +404,7 @@ local function buildPad(folder: Instance, origin: CFrame, side: "Home" | "Away",
 		Transparency = 0.15,
 	})
 	pad:SetAttribute("Side", side)
-	block(folder, side .. "PadBase", Vector3.new(size + 1, 0.1, size + 1), origin * CFrame.new(localPos + Vector3.new(0, 0.02, 0)), Config.UI.Panel, Enum.Material.SmoothPlastic, DECOR)
+	block(folder, side .. "PadBase", Vector3.new(size + 1, 0.1, size + 1), origin * CFrame.new(localPos + Vector3.new(0, plazaY + 0.02, 0)), Config.UI.Panel, Enum.Material.SmoothPlastic, DECOR)
 
 	local billboard = make("BillboardGui", {
 		Name = "PadLabel",
