@@ -36,6 +36,7 @@ local heldBall: BasePart? = nil
 local savedWalkSpeed: number? = nil
 local shotToken = 0
 local lastBeganAt = -math.huge
+local finishingUntil = 0 -- a layup/dunk is on its way: no second shot or crossover
 local suppressUntil = 0 -- set by MovesController so a steal mash can't become an accidental shot
 local touchButton: TextButton
 local touchScreenGui: ScreenGui
@@ -54,6 +55,14 @@ end
 local function getHumanoid(): Humanoid?
 	local character = player.Character
 	return character and character:FindFirstChildOfClass("Humanoid")
+end
+
+-- Setting humanoid.Jump from input code gets overwritten by the default
+-- controls the same frame, so jump through the state machine instead
+local function jumpNow(humanoid: Humanoid)
+	if humanoid.FloorMaterial ~= Enum.Material.Air then
+		humanoid:ChangeState(Enum.HumanoidStateType.Jumping)
+	end
 end
 
 local function restoreWalkSpeed()
@@ -85,7 +94,7 @@ local function release(cancelled: boolean)
 end
 
 local function begin()
-	if holding or not MatchClient.CanShootNow() then
+	if holding or os.clock() < finishingUntil or not MatchClient.CanShootNow() then
 		return
 	end
 	-- Mirror the server's rate limit so we never show a meter for a shot it would drop
@@ -115,67 +124,106 @@ local function begin()
 	local timeToApex = math.sqrt(2 * math.max(humanoid.JumpHeight, 0.1) / workspace.Gravity)
 	local token = shotToken
 	task.delay(math.max(0, idealTime - timeToApex), function()
-		if holding and token == shotToken and humanoid.Parent and humanoid.FloorMaterial ~= Enum.Material.Air then
-			humanoid.Jump = true
+		if holding and token == shotToken and humanoid.Parent then
+			jumpNow(humanoid)
 		end
 	end)
 end
 
--- Short burst of horizontal velocity on our own character (we own its physics).
--- Also used by MovesController for crossovers and steal lunges.
-local function burst(direction: Vector3, speed: number, duration: number)
-	local character = player.Character
-	local root = character and character:FindFirstChild("HumanoidRootPart")
-	local flat = Vector3.new(direction.X, 0, direction.Z)
-	if not root or not root:IsA("BasePart") or root.Anchored or flat.Magnitude < 1e-3 or speed <= 0 then
-		return
-	end
-	flat = flat.Unit * speed
+-- Holds our own character's horizontal velocity (we own its physics) until
+-- the returned attachment is destroyed. Vertical movement is left alone.
+local function planeVelocity(root: BasePart, velocity: Vector3): (LinearVelocity, Attachment)
 	local attachment = Instance.new("Attachment")
 	attachment.Name = "StreetHoopsBurst"
 	attachment.Parent = root
-	local velocity = Instance.new("LinearVelocity")
-	velocity.Attachment0 = attachment
-	velocity.RelativeTo = Enum.ActuatorRelativeTo.World
-	velocity.VelocityConstraintMode = Enum.VelocityConstraintMode.Plane
-	velocity.PrimaryTangentAxis = Vector3.xAxis
-	velocity.SecondaryTangentAxis = Vector3.zAxis
-	velocity.PlaneVelocity = Vector2.new(flat.X, flat.Z)
-	velocity.MaxForce = 1e5
-	velocity.Parent = root
+	local constraint = Instance.new("LinearVelocity")
+	constraint.Attachment0 = attachment
+	constraint.RelativeTo = Enum.ActuatorRelativeTo.World
+	constraint.VelocityConstraintMode = Enum.VelocityConstraintMode.Plane
+	constraint.PrimaryTangentAxis = Vector3.xAxis
+	constraint.SecondaryTangentAxis = Vector3.zAxis
+	constraint.PlaneVelocity = Vector2.new(velocity.X, velocity.Z)
+	constraint.MaxForce = 1e5
+	constraint.Parent = root
+	return constraint, attachment
+end
+
+local function getRoot(): BasePart?
+	local character = player.Character
+	local root = character and character:FindFirstChild("HumanoidRootPart")
+	if root and root:IsA("BasePart") and not root.Anchored then
+		return root
+	end
+	return nil
+end
+
+-- Short burst of horizontal velocity. Also used by MovesController for
+-- crossovers and steal lunges.
+local function burst(direction: Vector3, speed: number, duration: number)
+	local root = getRoot()
+	local flat = Vector3.new(direction.X, 0, direction.Z)
+	if not root or flat.Magnitude < 1e-3 or speed <= 0 then
+		return
+	end
+	local _, attachment = planeVelocity(root, flat.Unit * speed)
 	task.delay(duration, function()
-		velocity:Destroy()
 		attachment:Destroy()
 	end)
 end
 ShootController.Burst = burst
 
+-- Dunk leap: carry our speed (never brake) to just short of the rim, then hang
+-- there so we come down in front of the hoop instead of drifting under the glass
+local function dunkLeap(root: BasePart, humanoid: Humanoid, toward: Vector3)
+	local distance = toward.Magnitude
+	local direction = if distance > 1e-3 then toward.Unit else Vector3.zero
+	local travel = math.max(0, distance - FINISH.DunkStopShort)
+	local v = root.AssemblyLinearVelocity
+	local current = math.max(0, Vector3.new(v.X, 0, v.Z):Dot(direction))
+	local speed = math.min(math.max(current, travel / FINISH.DunkLeapTime), FINISH.DunkLeapMaxSpeed)
+	local duration = if speed > 0 then travel / speed else 0
+	local constraint, attachment = planeVelocity(root, direction * speed)
+	local started = os.clock()
+	local connection: RBXScriptConnection
+	connection = RunService.Heartbeat:Connect(function()
+		local elapsed = os.clock() - started
+		if elapsed >= duration then
+			constraint.PlaneVelocity = Vector2.zero
+		end
+		local landed = elapsed > 0.15 and humanoid.FloorMaterial ~= Enum.Material.Air
+		if landed or elapsed >= FINISH.DunkHangTime or not attachment.Parent or root.Anchored then
+			connection:Disconnect()
+			attachment:Destroy()
+		end
+	end)
+end
+
 -- Driving at the rim? Then shoot means layup/dunk (no meter). The prediction
 -- is a little stricter than the server's check so the two nearly always agree.
 local function tryFinish(): boolean
-	if holding or not MatchClient.CanShootNow() then
+	local now = os.clock()
+	if holding or now < finishingUntil or not MatchClient.CanShootNow() then
 		return false
 	end
-	local now = os.clock()
 	if now - lastBeganAt < SHOT.MinShotInterval + 0.05 or now < suppressUntil then
 		return false
 	end
 	local kind, rim = MatchClient.PredictFinish()
 	local humanoid = getHumanoid()
-	local character = player.Character
-	local root = character and character:FindFirstChild("HumanoidRootPart")
-	if not kind or not rim or not humanoid or not root or not root:IsA("BasePart") then
+	local root = getRoot()
+	if not kind or not rim or not humanoid or humanoid.Health <= 0 or not root then
 		return false
 	end
 	lastBeganAt = now
+	finishingUntil = now + math.max(FINISH.DunkTime, FINISH.LayupTime) + 0.3
 	shotToken += 1
-	finishRemote:FireServer(shotToken)
+	-- Tell the server which move we played; it may downgrade a dunk, never upgrade
+	finishRemote:FireServer(shotToken, kind)
 
 	local toward = Vector3.new(rim.X - root.Position.X, 0, rim.Z - root.Position.Z)
-	humanoid.Jump = true
+	jumpNow(humanoid)
 	if kind == "Dunk" then
-		local travel = math.max(0, toward.Magnitude - FINISH.DunkStopShort)
-		burst(toward, math.min(travel / FINISH.DunkLeapTime, FINISH.DunkLeapMaxSpeed), FINISH.DunkLeapTime)
+		dunkLeap(root, humanoid, toward)
 	else
 		burst(toward, FINISH.LayupHopSpeed, FINISH.LayupHopTime)
 	end
@@ -329,11 +377,14 @@ function ShootController.Init()
 	refreshTouch()
 
 	Net.Event("Feedback").OnClientEvent:Connect(function(kind: string, data: any)
-		if kind == "ShotRejected" and typeof(data) == "table" and data.Token == shotToken and holding then
-			holding = false
-			heldBall = nil
-			restoreWalkSpeed()
-			stopTrackingTouch()
+		if kind == "ShotRejected" and typeof(data) == "table" and data.Token == shotToken then
+			finishingUntil = 0 -- a refused finish frees us to shoot again
+			if holding then
+				holding = false
+				heldBall = nil
+				restoreWalkSpeed()
+				stopTrackingTouch()
+			end
 		end
 	end)
 
@@ -341,13 +392,15 @@ function ShootController.Init()
 		holding = false
 		heldBall = nil
 		savedWalkSpeed = nil
+		finishingUntil = 0
 		stopTrackingTouch()
 		ShotMeter.Cancel()
 	end)
 end
 
+-- True while a jump shot is held or a layup/dunk is on its way
 function ShootController.IsHolding(): boolean
-	return holding
+	return holding or os.clock() < finishingUntil
 end
 
 -- Ignore shot presses until `untilTime` (os.clock); never shortens an existing lockout

@@ -9,6 +9,7 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local Signal = require(ReplicatedStorage:WaitForChild("Shared"):WaitForChild("Signal"))
 local Config = require(ReplicatedStorage:WaitForChild("Shared"):WaitForChild("Config"))
+local BasketballMath = require(ReplicatedStorage:WaitForChild("Shared"):WaitForChild("BasketballMath"))
 
 local MatchClient = {}
 
@@ -124,6 +125,16 @@ function MatchClient.CanShootNow(): boolean
 	return state == "Idle"
 end
 
+local function courtOrigin(court: Model): CFrame?
+	local id = court:GetAttribute("CourtId")
+	for _, def in Config.Courts do
+		if def.Id == id then
+			return BasketballMath.CourtOrigin(def.Position, def.Yaw)
+		end
+	end
+	return nil
+end
+
 -- If we're driving at the rim with the ball: "Dunk" or "Layup" (and the rim
 -- centre). A touch stricter than the server's check so the two agree.
 function MatchClient.PredictFinish(): (string?, Vector3?)
@@ -137,6 +148,15 @@ function MatchClient.PredictFinish(): (string?, Vector3?)
 	if typeof(rim) ~= "Vector3" or not root or not root:IsA("BasePart") then
 		return nil, nil
 	end
+	-- The server refuses finishes from the strip behind the backboard
+	local origin = courtOrigin(court)
+	if origin then
+		local localPos = origin:PointToObjectSpace(root.Position)
+		local boardHalf = Config.Court.BackboardSize.X / 2 + 3.5
+		if localPos.Z < Config.Court.BackboardZ + 0.3 and math.abs(localPos.X) <= boardHalf then
+			return nil, nil
+		end
+	end
 	local offset = Vector3.new(rim.X - root.Position.X, 0, rim.Z - root.Position.Z)
 	local distance = offset.Magnitude
 	if distance < 1e-3 then
@@ -144,10 +164,13 @@ function MatchClient.PredictFinish(): (string?, Vector3?)
 	end
 	local v = root.AssemblyLinearVelocity
 	local approach = Vector3.new(v.X, 0, v.Z):Dot(offset.Unit)
+	-- The server sees us a little later (further out) than we see ourselves; it
+	-- allows for about 0.1 s of that, this covers some extra on slow connections
+	local judged = distance + math.max(approach, 0) * 0.05
 	local finish = Config.Finish
-	if distance <= finish.DunkRange - 0.3 and approach >= finish.DunkMinApproach + 1 then
+	if judged <= finish.DunkRange - 0.3 and approach >= finish.DunkMinApproach + 1 then
 		return "Dunk", rim
-	elseif distance <= finish.LayupRange - 0.3 and approach >= finish.LayupMinApproach + 1 then
+	elseif judged <= finish.LayupRange - 0.3 and approach >= finish.LayupMinApproach + 1 then
 		return "Layup", rim
 	end
 	return nil, nil

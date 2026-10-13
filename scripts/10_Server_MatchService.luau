@@ -318,10 +318,25 @@ local function endMatch(cs: CourtState, winner: Player?, reason: string)
 	ball.PickupFilter = nil
 	ball.EnforceBounds = false
 	BallService.SetState(ball, "Dead")
-	-- Freeze only players still standing on the court
+	-- Freeze the players still on the court. Anyone in mid-air (a game-winning
+	-- dunk) is frozen once they land, not left hanging at the rim
+	local matchId = cs.MatchId
 	for _, player in participants(cs) do
 		if CharacterService.IsAlive(player) then
-			CharacterService.SetFrozen(player, true)
+			if CharacterService.WasGroundedWithin(player, 0.1) then
+				CharacterService.SetFrozen(player, true)
+			else
+				task.spawn(function()
+					local deadline = os.clock() + 1.5
+					repeat
+						task.wait(0.1)
+					until os.clock() >= deadline or CharacterService.WasGroundedWithin(player, 0.1)
+					local stillOver = (cs.State :: string) == "GameOver" and cs.MatchId == matchId
+					if stillOver and table.find(participants(cs), player) and CharacterService.IsAlive(player) then
+						CharacterService.SetFrozen(player, true)
+					end
+				end)
+			end
 		end
 	end
 	publish(cs)

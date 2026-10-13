@@ -62,6 +62,8 @@ local lastState: string? = nil
 local lastBannerMessage = ""
 local lastCountdown = -1
 local bannerToken = 0
+local scoreBannerUntil = 0 -- SLAM DUNK! / POSTERIZED! keep the banner until then
+local refreshQueued = false
 local leaveQueueBound = false
 local leaveMatchBound = false
 local confirmToken = 0
@@ -683,8 +685,20 @@ local function refresh()
 	if playing and court and state == "Dead" then
 		local message = attrString(court, "Message")
 		if message ~= "" and message ~= lastBannerMessage then
-			lastBannerMessage = message
-			showBanner(message, nil, THEME.Text, nil)
+			local wait = scoreBannerUntil - os.clock()
+			if wait > 0 then
+				-- Let the dunk banner play out, then show the dead-ball message
+				if not refreshQueued then
+					refreshQueued = true
+					task.delay(wait, function()
+						refreshQueued = false
+						refresh()
+					end)
+				end
+			else
+				lastBannerMessage = message
+				showBanner(message, nil, THEME.Text, nil)
+			end
 		end
 	else
 		lastBannerMessage = ""
@@ -762,6 +776,15 @@ end
 
 local SCORE_WORDS = { [2] = "BUCKET!", [3] = "SPLASH!" }
 
+local SCORE_BANNER_TIME = 1.2
+
+local function showScoreBanner(text: string, color: Color3)
+	scoreBannerUntil = os.clock() + SCORE_BANNER_TIME
+	lastBannerMessage = "" -- brings the dead-ball message back afterwards
+	showBanner(text, nil, color, SCORE_BANNER_TIME)
+	task.delay(SCORE_BANNER_TIME, refresh)
+end
+
 local function onFeedback(kind: string, data: any)
 	if typeof(data) ~= "table" then
 		data = {}
@@ -776,7 +799,7 @@ local function onFeedback(kind: string, data: any)
 		if data.ShooterUserId == player.UserId then
 			local word = if shotKind == "Dunk" then "SLAM DUNK!" elseif shotKind == "Layup" then "LAYUP" else SCORE_WORDS[points] or "SCORE!"
 			if shotKind == "Dunk" then
-				showBanner("SLAM DUNK!", nil, THEME.Accent, 1.2)
+				showScoreBanner("SLAM DUNK!", THEME.Accent)
 			end
 			if data.Practice then
 				Hud.Toast(("+%d  %s  (practice)"):format(points, word), THEME.Accent, 1.6)
@@ -784,7 +807,8 @@ local function onFeedback(kind: string, data: any)
 				Hud.Toast(("+%d  %s"):format(points, word), THEME.Perfect, 1.8)
 			end
 		elseif shotKind == "Dunk" then
-			showBanner("POSTERIZED!", nil, THEME.Bad, 1.2)
+			showScoreBanner("POSTERIZED!", THEME.Bad)
+			Hud.Toast(("Opponent dunked +%d"):format(points), THEME.Bad, 1.6)
 		else
 			Hud.Toast(("Opponent scored +%d"):format(points), THEME.Bad, 1.6)
 		end

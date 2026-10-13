@@ -29,7 +29,7 @@ This is a standalone project. It isn't connected to any other game.
 - **Queue pads:** stand on the blue **HOME** or red **AWAY** pad. When both are taken, the match starts after 2 seconds. You can step off or press **LEAVE** at any time. While a court is in a game its pads show **IN GAME**, and anyone who walks onto the court is moved off.
 - **Ball possession:** walk into a loose ball to pick it up. Only one player can hold it at a time, and the server decides who has it.
 - **Timed shooting:** hold the shoot button and release when the meter is in the green. The release decides the shot: early means short, late means long or off the glass, and perfect almost always goes in. A defender standing in front of you lowers your chances.
-- **Layups and dunks:** drive at the rim and press shoot. There's no meter; it happens on the press. Running hard from close in is a **dunk**: you leap at the hoop and slam it. Dunks almost always go in and are very hard to block. Driving from a bit further out, or more slowly, is a **layup**: a quick hop and a soft finish. Layups go in often, but a defender in front can contest or block them. Standing still near the rim still gives you the normal jump shot with the meter.
+- **Layups and dunks:** drive at the rim and press shoot. There's no meter; it happens on the press. Running hard from close in is a **dunk**: you leap at the hoop, slam it and drop down in front of the rim. Dunks almost always go in and are very hard to block. A defender standing in your path can stop you short, and then the dunk becomes a layup. Driving from a bit further out, or more slowly, is a **layup**: a quick hop and a soft finish. Layups go in often, but a defender in front can contest them, or jump to block them in the short moment before the ball leaves your hands. Standing still near the rim still gives you the normal jump shot with the meter, and so does driving along the baseline under the backboard (where shots aren't allowed).
 - **Steals:** on defense, get close, face the ball carrier and press steal. The closer you are, the better your chance. A successful steal knocks the ball loose. A miss leaves you slowed for a moment, so spamming it doesn't pay.
 - **Blocks:** react to the shot. Be on the ground when the shooter starts, then jump in front of them before they release. If you're in the air, close and between them and the rim, you can reject the shot into a loose ball. Bunny-hopping or hovering doesn't block anything.
 - **Crossovers:** on offense, the crossover button bursts you sideways and switches the ball to your other hand. For a split second you can't be stolen from. A defender who reaches during it gets their **ankles broken** and stumbles.
@@ -172,10 +172,11 @@ Click **File → Save to Roblox** (Ctrl+S).
 
 ### Solo (practice)
 
-1. Press **Play** (F5) and open **View → Output**. You should see `[Main] Street Hoops server ready — 1 court(s)` and **no red errors**.
+1. Press **Play** (F5) and open **View → Output**. You should see `[Street Hoops] ✓ Server ready — 1 court(s)` and **no red errors**.
 2. Walk through the arch toward the court and pick up the orange ball on the free-throw line.
 3. **Hold E**. A meter appears beside your character, and your player jumps. **Release when the white bar is in the green band.**
 4. Made shots show `+2 BUCKET! (practice)` or `+3 SPLASH! (practice)`.
+5. Grab the rebound, back up to the free-throw line, then run straight at the rim and press **E** when you are a few studs from it: you dunk (**SLAM DUNK!**). Press **E** a bit earlier (around the middle of the key) for a layup.
 
 ### Two players (a real 1v1)
 
@@ -190,6 +191,9 @@ Click **File → Save to Roblox** (Ctrl+S).
    - [ ] **Block:** as the defender, stand between the shooter and the hoop on the ground, and jump right after they start their shot. You see **BLOCKED!** and the ball flies loose. Holding jump the whole time doesn't block.
    - [ ] **Dunk:** sprint straight at the rim from just inside the paint and press **E**. You leap at the hoop and see **SLAM DUNK!** (the other player sees **POSTERIZED!**).
    - [ ] **Layup:** drive at the rim from around the free-throw line (or more slowly) and press **E**. A quick hop and a soft shot: **+2 LAYUP** when it drops.
+   - [ ] **Block a layup:** as the defender, stand on the ground between the attacker and the rim, and jump as soon as they hop. Sometimes you see **BLOCKED!**.
+   - [ ] **Stop a dunk short:** as the defender, stand still in the lane right in the dunker's path. They bump into you and it becomes a layup instead of a slam.
+   - [ ] Driving along the baseline right under the backboard and pressing **E** shows **No shots from behind the backboard**.
    - [ ] Standing still next to the rim and holding **E** still gives the normal meter jump shot.
    - [ ] Shots from beyond the arc score **3** and shots inside score **2**. After a basket, the player who was scored on gets the ball at the top of the key.
    - [ ] Keeping possession for 20 seconds without hitting the rim gives the ball to the opponent (**SHOT CLOCK**).
@@ -229,6 +233,7 @@ Every gameplay number is in **ReplicatedStorage › Shared › Config**. The mos
 | `Finish.DunkRange` / `LayupRange` | 7 / 11 | How close to the rim a drive can finish |
 | `Finish.DunkMinApproach` / `LayupMinApproach` | 12 / 5 | How fast you must be moving toward the rim (studs/s) |
 | `Finish.DunkMakeChance` / `LayupMakeChance` | 0.96 / 0.82 | Make chance before any contest |
+| `Finish.DunkTime` / `LayupTime` | 0.42 / 0.42 | Seconds from the press until the ball leaves your hands (the defender's window to react) |
 | `Defense.StealRange` / `StealBaseChance` / `StealCloseBonus` | 5.5 / 0.4 / 0.3 | Steal reach and success chance |
 | `Defense.StealCooldown` | 1.4 | Seconds between steal attempts |
 | `Defense.BlockRange` / `BlockChance` | 6.5 / 0.8 | How close a jumping defender must be, and how often it blocks |

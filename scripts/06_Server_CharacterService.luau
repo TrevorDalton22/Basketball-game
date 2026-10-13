@@ -30,7 +30,9 @@ type Slow = { Until: number, Speed: number }
 local slowed: { [Player]: Slow } = {}
 
 type Sample = { Position: Vector3, Time: number }
-local samples: { [Player]: Sample } = {}
+local samples: { [Player]: Sample } = {} -- latest position sample (anti-teleport baseline)
+local history: { [Player]: { Sample } } = {} -- last few samples, oldest first (speed measurement)
+local HISTORY_LENGTH = 4
 local suspiciousUntil: { [Player]: number } = {}
 local sampleTimer = 0
 -- Last time each match player was standing on something (checked every frame
@@ -40,6 +42,8 @@ local groundedAt: { [Player]: number } = {}
 local groundParams = RaycastParams.new()
 groundParams.FilterType = Enum.RaycastFilterType.Exclude
 groundParams.RespectCanCollide = true
+-- Ray "as a match player": skips the ring/net (players pass through them) and balls
+groundParams.CollisionGroup = Config.Collision.InMatch
 
 local function setupCollisionGroups()
 	for _, group in { GROUPS.Players, GROUPS.InMatch, GROUPS.Ball, GROUPS.BallMake, GROUPS.Hoop, GROUPS.Rim } do
@@ -100,8 +104,19 @@ local function applyMovement(player: Player)
 	end
 end
 
+-- Start a fresh baseline at the player's current (server-known) position. Never
+-- leave it empty: an empty baseline would accept any position as legit.
 local function resetSample(player: Player)
-	samples[player] = nil
+	local character = player.Character
+	local root = character and getRootPart(character)
+	if root then
+		local seed = { Position = root.Position, Time = os.clock() }
+		samples[player] = seed
+		history[player] = { seed }
+	else
+		samples[player] = nil
+		history[player] = nil
+	end
 end
 
 local function onCharacterAdded(player: Player, character: Model)
@@ -145,6 +160,7 @@ function CharacterService.Init()
 		slowed[player] = nil
 		groundedAt[player] = nil
 		samples[player] = nil
+		history[player] = nil
 		suspiciousUntil[player] = nil
 	end)
 end
@@ -252,27 +268,28 @@ function CharacterService.WasGroundedWithin(player: Player, seconds: number): bo
 	return at ~= nil and os.clock() - at <= seconds
 end
 
--- Horizontal velocity: the replicated physics velocity, or the movement since
--- the last position sample, whichever is faster (velocity can lag behind)
-function CharacterService.FlatVelocity(player: Player): Vector3
+-- How fast the player has really been moving along `direction` (studs/s),
+-- measured by the server from their recent positions (never the velocity the
+-- client reports). Uses the best of the last few sample windows, so a quick
+-- sideways move (crossover) just before driving doesn't hide the drive.
+function CharacterService.ApproachSpeed(player: Player, direction: Vector3): number
 	local root = CharacterService.GetRoot(player)
-	if not root then
-		return Vector3.zero
+	local list = history[player]
+	if not root or not list or direction.Magnitude < 1e-3 then
+		return 0
 	end
-	local v = root.AssemblyLinearVelocity
-	local physics = Vector3.new(v.X, 0, v.Z)
-	local last = samples[player]
-	if last then
-		local elapsed = os.clock() - last.Time
-		if elapsed > 0.05 then
-			local delta = root.Position - last.Position
-			local sampled = Vector3.new(delta.X, 0, delta.Z) / elapsed
-			if sampled.Magnitude > physics.Magnitude then
-				return sampled
-			end
+	local dir = Vector3.new(direction.X, 0, direction.Z).Unit
+	local now = os.clock()
+	local position = root.Position
+	local best = 0
+	for _, sample in list do
+		local elapsed = now - sample.Time
+		if elapsed >= 0.1 and elapsed <= 0.8 then
+			local delta = position - sample.Position
+			best = math.max(best, Vector3.new(delta.X, 0, delta.Z):Dot(dir) / elapsed)
 		end
 	end
-	return physics
+	return math.min(best, ANTI.MaxFlatSpeed)
 end
 
 -- Seconds since this match player last stood on the ground (math.huge if never)
@@ -362,8 +379,15 @@ function CharacterService.Update(dt: number)
 	local now = os.clock()
 	for _, player in Players:GetPlayers() do
 		local root = CharacterService.GetRoot(player)
-		if not root or frozen[player] then
+		if not root then
 			samples[player] = nil
+			history[player] = nil
+			continue
+		end
+		if frozen[player] then
+			-- Anchored by the server, so its position is authoritative: keep the
+			-- baseline fresh so there's no gap right after the unfreeze
+			resetSample(player)
 			continue
 		end
 		local position = root.Position
@@ -376,7 +400,14 @@ function CharacterService.Update(dt: number)
 				suspiciousUntil[player] = now + ANTI.PenaltyTime
 			end
 		end
-		samples[player] = { Position = position, Time = now }
+		local sample = { Position = position, Time = now }
+		samples[player] = sample
+		local list = history[player] or {}
+		table.insert(list, sample)
+		if #list > HISTORY_LENGTH then
+			table.remove(list, 1)
+		end
+		history[player] = list
 	end
 end
 

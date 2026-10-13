@@ -32,7 +32,8 @@ local MAX_HOLD_TIME = SHOT.FillTime * SHOT.MaxHoldFraction
 -- DefenderGrounded: the defender was on the ground when the shot began (only
 -- then can they block it: you have to react to the shot, not pogo-jump)
 -- Kind: "Jumper" (resolved by ShootRelease) or "Layup"/"Dunk" (resolved on a timer)
-type Pending = { Ball: any, StartedAt: number, Token: number, ClientToken: number, DefenderGrounded: boolean, Kind: string }
+-- PressDistance: distance to the rim when a layup/dunk was pressed
+type Pending = { Ball: any, StartedAt: number, Token: number, ClientToken: number, DefenderGrounded: boolean, Kind: string, PressDistance: number }
 
 local pending: { [Player]: Pending } = {}
 local lastShotAt: { [Player]: number } = {}
@@ -273,17 +274,20 @@ end
 --------------------------------------------------------------------------------
 
 -- Which finish the player is in position for, judged from the server's own
--- view of their distance and speed toward the rim (nil = not driving)
-local function finishKindFor(player: Player, origin: CFrame, rim: Vector3, root: BasePart): string?
+-- view of their distance and real recent movement toward the rim (nil = not
+-- driving). The server's copy of a running player trails the client by a
+-- moment, so a little of their travel is credited to the distance.
+local function finishKindFor(player: Player, origin: CFrame, rim: Vector3, root: BasePart): (string?, number)
 	local distance = BasketballMath.DistanceToRim(origin, root.Position)
 	local toRim = flatUnit(rim - root.Position, origin:VectorToWorldSpace(Vector3.new(0, 0, -1)))
-	local approach = CharacterService.FlatVelocity(player):Dot(toRim)
-	if distance <= FINISH.DunkRange and approach >= FINISH.DunkMinApproach then
-		return "Dunk"
-	elseif distance <= FINISH.LayupRange and approach >= FINISH.LayupMinApproach then
-		return "Layup"
+	local approach = CharacterService.ApproachSpeed(player, toRim)
+	local judged = math.max(0, distance - math.clamp(approach, 0, Config.Movement.WalkSpeed) * FINISH.LagCompensation)
+	if judged <= FINISH.DunkRange and approach >= FINISH.DunkMinApproach then
+		return "Dunk", distance
+	elseif judged <= FINISH.LayupRange and approach >= FINISH.LayupMinApproach then
+		return "Layup", distance
 	end
-	return nil
+	return nil, distance
 end
 
 local function finishChance(kind: string, shooterPos: Vector3, toRim: Vector3, defender: Player?): number
@@ -303,6 +307,16 @@ local function finishChance(kind: string, shooterPos: Vector3, toRim: Vector3, d
 	return math.clamp(chance, 0.01, 0.99)
 end
 
+-- Keep a court-local point out in front of the glass
+local function inFrontOfGlass(origin: CFrame, point: Vector3, margin: number): Vector3
+	local localPoint = origin:PointToObjectSpace(point)
+	local minZ = Config.Court.BackboardZ + margin
+	if localPoint.Z < minZ then
+		return origin:PointToWorldSpace(Vector3.new(localPoint.X, localPoint.Y, minZ))
+	end
+	return point
+end
+
 local function resolveFinish(player: Player, entry: Pending)
 	local ball = entry.Ball
 	if ball.State ~= "Held" or ball.Holder ~= player then
@@ -312,33 +326,48 @@ local function resolveFinish(player: Player, entry: Pending)
 	local root = CharacterService.GetRoot(player)
 	local court = ball.Court
 	local origin: CFrame = court.Origin
-	local function reject()
+	local function reject(reason: string, lockout: boolean)
 		ball.Part:SetAttribute("Shooting", false)
 		ball.Part:SetAttribute("Finish", "")
-		feedback:FireClient(player, "ShotRejected", { Reason = "", Token = entry.ClientToken })
-		lastShotAt[player] = os.clock() + DEFENSE.StealCooldown
+		feedback:FireClient(player, "ShotRejected", { Reason = reason, Token = entry.ClientToken })
+		if lockout then
+			lastShotAt[player] = os.clock() + DEFENSE.StealCooldown
+		end
 	end
-	if not context or not root or CharacterService.IsSuspicious(player) then
-		reject()
+	if not context or not root or not CharacterService.IsMoveLegit(player) then
+		reject("", true)
 		return
 	end
-	if shotSpotProblem(origin, root.Position, context.Practice) then
-		reject()
+	-- The spot was checked at the press; a baseline drive may drift under the
+	-- glass during the windup, so only the bounds are checked again here
+	if not context.Practice and not BasketballMath.IsInBounds(origin, root.Position, 0) then
+		reject("", false)
 		return
 	end
 
 	local kind = entry.Kind
 	local rim: Vector3 = court.RimCenter
 	local shooterPos = root.Position
+	local distance = BasketballMath.DistanceToRim(origin, shooterPos)
+	-- Did they actually get there? Backing off (or never arriving) doesn't dunk.
+	if distance > entry.PressDistance + 1 or distance > FINISH.LayupRange then
+		reject("", true)
+		return
+	end
+	if kind == "Dunk" and distance > FINISH.DunkStopShort + FINISH.DunkArriveSlack then
+		kind = "Layup" -- stopped short (body-blocked): it becomes a layup from where they are
+	end
+
 	local toRim = flatUnit(rim - shooterPos, origin:VectorToWorldSpace(Vector3.new(0, 0, -1)))
 	local side = toRim:Cross(Vector3.yAxis)
+	local boardDir = origin:VectorToWorldSpace(Vector3.new(0, 0, -1)) -- from the rim toward the glass
 	local points = if kind == "Dunk" then Config.Scoring.Dunk else Config.Scoring.Layup
 	ball.Part:SetAttribute("Finish", "")
 
 	-- Blocked? Same rules as a jump shot, but dunks are much harder to stop
 	local blockScale = if kind == "Dunk" then FINISH.DunkBlockFactor else 1
 	if context.Defender and entry.DefenderGrounded and isBlocked(context.Defender, shooterPos, toRim, origin, blockScale) then
-		local from = shooterPos + Vector3.new(0, SHOT.ReleaseHeight, 0) + toRim * SHOT.ReleaseForward
+		local from = inFrontOfGlass(origin, shooterPos + Vector3.new(0, SHOT.ReleaseHeight, 0) + toRim * SHOT.ReleaseForward, Config.Ball.Radius + 0.3)
 		local deflect = -toRim * rng:NextNumber(9, 15) + side * rng:NextNumber(-7, 7) + Vector3.new(0, rng:NextNumber(6, 11), 0)
 		ball.Part:SetAttribute("Shooting", false)
 		if BallService.Knock(ball, from, deflect, context.Defender, DEFENSE.BlockedRegrabDelay, DEFENSE.BlockerGrabDelay) then
@@ -358,14 +387,22 @@ local function resolveFinish(player: Player, entry: Pending)
 			from = rim + Vector3.new(0, 1.4, 0) - toRim * 0.2
 			velocity = Vector3.new(0, -32, 0) + toRim * 1.5
 		else
-			-- Clanged off the front of the rim
-			from = rim + Vector3.new(0, 1.3, 0) - toRim * (Config.Court.RimRadius + Config.Ball.Radius + 0.3)
-			velocity = -toRim * rng:NextNumber(8, 12) + side * rng:NextNumber(-5, 5) + Vector3.new(0, rng:NextNumber(9, 13), 0)
+			-- Clanged off the front of the rim; bounced off the glass side if the
+			-- dunker came in from the baseline
+			local out = -toRim
+			local into = out:Dot(boardDir)
+			if into > 0 then
+				out = (out - boardDir * (2 * into)).Unit
+			end
+			from = rim + Vector3.new(0, 1.3, 0) + out * (Config.Court.RimRadius + Config.Ball.Radius + 0.3)
+			velocity = out * rng:NextNumber(8, 12) + side * rng:NextNumber(-5, 5) + Vector3.new(0, rng:NextNumber(9, 13), 0)
 		end
 	else
-		from = shooterPos + Vector3.new(0, SHOT.ReleaseHeight + 0.6, 0) + toRim * 1.2
-		local distance = BasketballMath.DistanceToRim(origin, shooterPos)
-		local boardDir = origin:VectorToWorldSpace(Vector3.new(0, 0, -1))
+		-- Released close to the rim (not from wherever the jump happens to be),
+		-- above rim height, and always in front of the glass
+		local back = math.max(distance - 1.2, Config.Court.RimRadius + Config.Court.RimTube + Config.Ball.Radius + 0.2)
+		local lift = math.clamp(shooterPos.Y + SHOT.ReleaseHeight + 0.6 - rim.Y, 1.0, FINISH.LayupArc - 0.5)
+		from = inFrontOfGlass(origin, rim - toRim * back + Vector3.new(0, lift, 0), 1.0)
 		local target = aimPoint(rim, toRim, boardDir, made, "Good", SHOT.IdealFraction, distance)
 		velocity = BasketballMath.SolveArc(from, target, rim.Y + FINISH.LayupArc, Config.Ball.Gravity)
 	end
@@ -380,16 +417,19 @@ local function resolveFinish(player: Player, entry: Pending)
 		Made = made,
 		Kind = kind,
 	}
-	BallService.Launch(ball, from, velocity, shot)
+	if BallService.Launch(ball, from, velocity, shot) and kind == "Dunk" and not made then
+		-- A clank off the front rim counts as a rim touch (resets the shot clock)
+		ball.TouchedRim = true
+	end
 end
 
-local function onFinish(player: Player, clientToken: any)
+local function onFinish(player: Player, clientToken: any, clientKind: any)
 	if not RemoteGuard.Allow(player) then
 		return
 	end
 	local shotNumber: number = if RemoteGuard.IsNumber(clientToken, 0, 1e9) then clientToken else 0
-	local function refuse()
-		feedback:FireClient(player, "ShotRejected", { Reason = "", Token = shotNumber })
+	local function refuse(reason: string?)
+		feedback:FireClient(player, "ShotRejected", { Reason = reason or "", Token = shotNumber })
 	end
 	if pending[player] then
 		refuse()
@@ -409,21 +449,34 @@ local function onFinish(player: Player, clientToken: any)
 		return
 	end
 	local court = ball.Court
-	if shotSpotProblem(court.Origin, root.Position, context.Practice) then
-		refuse()
+	local problem = shotSpotProblem(court.Origin, root.Position, context.Practice)
+	if problem then
+		refuse(problem)
 		return
 	end
-	local kind = finishKindFor(player, court.Origin, court.RimCenter, root)
+	local kind, pressDistance = finishKindFor(player, court.Origin, court.RimCenter, root)
 	if not kind then
-		refuse() -- not actually driving at the rim
+		refuse("Too far out or too slow to finish") -- not actually driving at the rim
 		return
+	end
+	-- The client already played its move: never upgrade it, only downgrade
+	if kind == "Dunk" and clientKind == "Layup" then
+		kind = "Layup"
 	end
 
 	local defender = context.Defender
-	local defenderGrounded = defender ~= nil and CharacterService.WasGroundedWithin(defender, DEFENSE.DefenderGroundedAtShot)
+	local defenderGrounded = defender ~= nil and CharacterService.WasGroundedWithin(defender, FINISH.DefenderGroundedAtPress)
 	tokenCounter += 1
 	local token = tokenCounter
-	local entry: Pending = { Ball = ball, StartedAt = now, Token = token, ClientToken = shotNumber, DefenderGrounded = defenderGrounded, Kind = kind }
+	local entry: Pending = {
+		Ball = ball,
+		StartedAt = now,
+		Token = token,
+		ClientToken = shotNumber,
+		DefenderGrounded = defenderGrounded,
+		Kind = kind,
+		PressDistance = pressDistance,
+	}
 	pending[player] = entry
 	lastShotAt[player] = now
 	ball.Part:SetAttribute("Shooting", true)
@@ -446,9 +499,9 @@ local function onShootStart(player: Player, clientToken: any)
 		return
 	end
 	local shotNumber: number = if RemoteGuard.IsNumber(clientToken, 0, 1e9) then clientToken else 0
-	local function refuse()
+	local function refuse(reason: string?)
 		-- Tell the client so its meter does not show a shot that never happened
-		feedback:FireClient(player, "ShotRejected", { Reason = "", Token = shotNumber })
+		feedback:FireClient(player, "ShotRejected", { Reason = reason or "", Token = shotNumber })
 	end
 	if pending[player] then
 		refuse()
@@ -469,15 +522,16 @@ local function onShootStart(player: Player, clientToken: any)
 	end
 	-- Check the spot now too, so the "shooting" flag can't be raised from a
 	-- spot where the shot will be refused anyway
-	if shotSpotProblem(ball.Court.Origin, root.Position, context.Practice) then
-		refuse()
+	local problem = shotSpotProblem(ball.Court.Origin, root.Position, context.Practice)
+	if problem then
+		refuse(problem)
 		return
 	end
 	local defender = context.Defender
 	local defenderGrounded = defender ~= nil and CharacterService.WasGroundedWithin(defender, DEFENSE.DefenderGroundedAtShot)
 	tokenCounter += 1
 	local token = tokenCounter
-	pending[player] = { Ball = ball, StartedAt = now, Token = token, ClientToken = shotNumber, DefenderGrounded = defenderGrounded, Kind = "Jumper" }
+	pending[player] = { Ball = ball, StartedAt = now, Token = token, ClientToken = shotNumber, DefenderGrounded = defenderGrounded, Kind = "Jumper", PressDistance = 0 }
 	lastShotAt[player] = now
 	ball.Part:SetAttribute("Shooting", true)
 

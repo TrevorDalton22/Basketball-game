@@ -130,15 +130,21 @@ Config.Finish = {
 	DunkRange = 7,
 	LayupMinApproach = 5, -- speed toward the rim (studs/s) that counts as driving
 	DunkMinApproach = 12,
-	LayupTime = 0.3, -- seconds from the press to the ball leaving the hands
-	DunkTime = 0.34,
+	-- Seconds from the press to the ball leaving the hands. Long enough for a
+	-- defender to see it coming and jump (reaction + network), short enough to feel snappy.
+	LayupTime = 0.42,
+	DunkTime = 0.42,
+	DefenderGroundedAtPress = 0.2, -- to block a finish, the defender was on the ground this recently
+	LagCompensation = 0.1, -- seconds of the driver's travel credited to the distance (server view trails the client)
+	DunkArriveSlack = 2.5, -- a dunker who ends up farther than DunkStopShort + this becomes a layup
 	LayupMakeChance = 0.82,
 	DunkMakeChance = 0.96,
 	ContestScale = 0.6, -- a defender's contest hurts finishes this much as much as jump shots
 	DunkBlockFactor = 0.4, -- dunks are much harder to block (multiplies Defense.BlockChance)
 	LayupArc = 2.6, -- apex height above the rim for a layup
 	-- Client leap (cosmetic, the server decides the result)
-	DunkLeapTime = 0.3, -- time to carry the dunker to just in front of the rim
+	DunkLeapTime = 0.34, -- time to carry the dunker to just in front of the rim
+	DunkHangTime = 0.6, -- then hold them there (no drifting under the glass) until they land
 	DunkLeapMaxSpeed = 30,
 	DunkStopShort = 1.8, -- stop this far in front of the rim centre
 	LayupHopSpeed = 10,
