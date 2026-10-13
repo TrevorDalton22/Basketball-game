@@ -21,6 +21,7 @@ local RemoteGuard = require(Server:WaitForChild("RemoteGuard"))
 local ShotService = {}
 
 local SHOT = Config.Shot
+local DEFENSE = Config.Defense
 local MAX_HOLD_TIME = SHOT.FillTime * SHOT.MaxHoldFraction
 
 -- Token: server-side id for the auto-release timer
@@ -133,6 +134,28 @@ local function aimPoint(rim: Vector3, toRim: Vector3, boardDir: Vector3, made: b
 	return frontMiss()
 end
 
+-- Is `defender` in the air between the shooter and the rim, close enough to block?
+local function isBlocked(defender: Player, shooterPos: Vector3, toRim: Vector3, origin: CFrame): boolean
+	local root = CharacterService.GetRoot(defender)
+	local humanoid = CharacterService.GetHumanoid(defender)
+	if not root or not humanoid or CharacterService.IsSuspicious(defender) then
+		return false
+	end
+	local offset = root.Position - shooterPos
+	local flat = Vector3.new(offset.X, 0, offset.Z)
+	local gap = flat.Magnitude
+	if gap > DEFENSE.BlockRange or gap < 1e-3 or flat.Unit:Dot(toRim) < DEFENSE.BlockFacingDot then
+		return false
+	end
+	-- Standing root height above the floor, from the avatar's own proportions
+	local standing = humanoid.HipHeight + root.Size.Y / 2
+	local rise = (root.Position.Y - origin.Position.Y) - standing
+	if rise < DEFENSE.BlockMinRise then
+		return false
+	end
+	return rng:NextNumber() < DEFENSE.BlockChance
+end
+
 local function resolveShot(player: Player, entry: Pending, clientHold: number?)
 	local ball = entry.Ball
 	if ball.State ~= "Held" or ball.Holder ~= player then
@@ -184,12 +207,27 @@ local function resolveShot(player: Player, entry: Pending, clientHold: number?)
 	local points = BasketballMath.ShotPoints(origin, shooterPos)
 	local toRim = flatUnit(rim - shooterPos, origin:VectorToWorldSpace(Vector3.new(0, 0, -1)))
 
+	local from = shooterPos + Vector3.new(0, SHOT.ReleaseHeight, 0) + toRim * SHOT.ReleaseForward
+
+	-- Blocked? The defender must be airborne, close, and between shooter and rim
+	if context.Defender and isBlocked(context.Defender, shooterPos, toRim, origin) then
+		local side = toRim:Cross(Vector3.yAxis)
+		local deflect = -toRim * rng:NextNumber(9, 15) + side * rng:NextNumber(-7, 7) + Vector3.new(0, rng:NextNumber(6, 11), 0)
+		ball.Part:SetAttribute("Shooting", false)
+		if BallService.Knock(ball, from, deflect, context.Defender, DEFENSE.BlockedRegrabDelay) then
+			local data = { BlockerUserId = context.Defender.UserId, ShooterUserId = player.UserId }
+			feedback:FireClient(player, "Block", data)
+			feedback:FireClient(context.Defender, "Block", data)
+			feedback:FireClient(player, "ShotRejected", { Reason = "", Token = entry.ClientToken })
+		end
+		return
+	end
+
 	local chance = makeChance(quality, distance, shooterPos, toRim, context.Defender)
 	local made = rng:NextNumber() < chance
 	local boardDir = origin:VectorToWorldSpace(Vector3.new(0, 0, -1)) -- from the rim toward the backboard
 	local target = aimPoint(rim, toRim, boardDir, made, quality, fraction, distance)
 
-	local from = shooterPos + Vector3.new(0, SHOT.ReleaseHeight, 0) + toRim * SHOT.ReleaseForward
 	local apexY = rim.Y + BasketballMath.ArcHeight(distance)
 	local velocity = BasketballMath.SolveArc(from, target, apexY, Config.Ball.Gravity)
 

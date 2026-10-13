@@ -94,6 +94,26 @@ local function shootPrompt(): string
 	return "Hold E"
 end
 
+local function crossoverPrompt(): string
+	local kind = inputKind()
+	if kind == "Touch" then
+		return "MOVE to cross over"
+	elseif kind == "Gamepad" then
+		return "L1 to cross over"
+	end
+	return "Q to cross over"
+end
+
+local function defensePrompt(): string
+	local kind = inputKind()
+	if kind == "Touch" then
+		return "STEAL when close · jump in front of a shot to block"
+	elseif kind == "Gamepad" then
+		return "R2 to steal when close · A (jump) in front of a shot to block"
+	end
+	return "E to steal when close · Space (jump) in front of a shot to block"
+end
+
 local function attrNumber(court: Model, name: string): number
 	local value = court:GetAttribute(name)
 	return if typeof(value) == "number" then value else 0
@@ -663,14 +683,16 @@ local function refresh()
 	-- Hint
 	if playing then
 		if MatchClient.CanShootNow() then
-			hint.Text = ("%s · release in the green to shoot"):format(shootPrompt())
+			hint.Text = ("%s · release in the green to shoot · %s"):format(shootPrompt(), crossoverPrompt())
+		elseif MatchClient.CanStealNow() then
+			hint.Text = "Defense · " .. defensePrompt()
 		else
 			hint.Text = ""
 		end
 	elseif queued then
 		hint.Text = ""
 	elseif MatchClient.GetHeldBall() then
-		hint.Text = ("Practice · %s · release in the green to shoot"):format(shootPrompt())
+		hint.Text = ("Practice · %s · release in the green to shoot · %s"):format(shootPrompt(), crossoverPrompt())
 	elseif not anyCourtOpen() and #MatchClient.GetCourts() > 0 then
 		hint.Text = "All courts are in a match — the pads light up again when one opens"
 	else
@@ -749,6 +771,29 @@ local function onFeedback(kind: string, data: any)
 			end
 		else
 			Hud.Toast(("Opponent scored +%d"):format(points), THEME.Bad, 1.6)
+		end
+	elseif kind == "Steal" then
+		if data.Success == true then
+			if data.StealerUserId == player.UserId then
+				showBanner("STEAL!", nil, THEME.Perfect, 1)
+			else
+				showBanner("STRIPPED!", nil, THEME.Bad, 1)
+			end
+		elseif data.StealerUserId == player.UserId then
+			local reason = if typeof(data.Reason) == "string" then data.Reason else "Missed"
+			Hud.Toast(("%s — slowed for a moment"):format(reason), THEME.Bad, 1.2)
+		end
+	elseif kind == "Block" then
+		if data.BlockerUserId == player.UserId then
+			showBanner("BLOCKED!", nil, THEME.Perfect, 1)
+		else
+			showBanner("REJECTED!", nil, THEME.Bad, 1)
+		end
+	elseif kind == "Ankles" then
+		if data.HandlerUserId == player.UserId then
+			showBanner("ANKLES BROKEN!", "They bit on the crossover", THEME.Perfect, 1.2)
+		else
+			showBanner("ANKLES!", "You reached on a crossover", THEME.Bad, 1.2)
 		end
 	elseif kind == "Turnover" then
 		local reason = if typeof(data.Reason) == "string" then data.Reason else "Turnover"

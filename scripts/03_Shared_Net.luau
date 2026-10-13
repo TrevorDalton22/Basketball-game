@@ -14,6 +14,8 @@ local EVENTS: { [string]: string } = {
 	ShootRelease = "ShootRelease", -- (holdTime: number)
 	LeaveQueue = "LeaveQueue", -- ()
 	LeaveMatch = "LeaveMatch", -- () forfeit the current match
+	Steal = "Steal", -- () reach for the ball carrier's ball
+	Crossover = "Crossover", -- (direction: -1 | 1) switch hands with a sideways burst
 	-- server → client
 	Feedback = "Feedback", -- (kind: string, data: table)
 }

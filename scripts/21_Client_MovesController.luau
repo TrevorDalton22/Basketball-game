@@ -1,0 +1,199 @@
+--!strict
+-- MovesController (ModuleScript) — StarterPlayer > StarterPlayerScripts > ClientMain > MovesController
+-- Steal (defense) and crossover (offense) input on keyboard, controller and
+-- touch. Each press sends one request; the server decides what happens. The
+-- quick sideways burst / forward lunge is applied locally so it feels instant.
+
+local ContextActionService = game:GetService("ContextActionService")
+local Players = game:GetService("Players")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local UserInputService = game:GetService("UserInputService")
+
+local Shared = ReplicatedStorage:WaitForChild("Shared")
+local Config = require(Shared:WaitForChild("Config"))
+local Net = require(Shared:WaitForChild("Net"))
+
+local Client = script.Parent
+local UIKit = require(Client:WaitForChild("UIKit"))
+local MatchClient = require(Client:WaitForChild("MatchClient"))
+local ShootController = require(Client:WaitForChild("ShootController"))
+
+local MovesController = {}
+
+local MOVES = Config.Moves
+local DEFENSE = Config.Defense
+local STEAL_ACTION = "StreetHoops_Steal"
+local CROSSOVER_ACTION = "StreetHoops_Crossover"
+local player = Players.LocalPlayer
+
+local stealRemote: RemoteEvent
+local crossoverRemote: RemoteEvent
+local lastSteal = -math.huge
+local lastCrossover = -math.huge
+local stealButton: TextButton
+local moveButton: TextButton
+
+local function getRoot(): BasePart?
+	local character = player.Character
+	local root = character and character:FindFirstChild("HumanoidRootPart")
+	if root and root:IsA("BasePart") then
+		return root
+	end
+	return nil
+end
+
+-- Short burst of horizontal velocity on our own character (we own its physics)
+local function burst(direction: Vector3, speed: number, duration: number)
+	local root = getRoot()
+	local flat = Vector3.new(direction.X, 0, direction.Z)
+	if not root or root.Anchored or flat.Magnitude < 1e-3 then
+		return
+	end
+	flat = flat.Unit * speed
+	local attachment = Instance.new("Attachment")
+	attachment.Name = "StreetHoopsBurst"
+	attachment.Parent = root
+	local velocity = Instance.new("LinearVelocity")
+	velocity.Attachment0 = attachment
+	velocity.RelativeTo = Enum.ActuatorRelativeTo.World
+	velocity.VelocityConstraintMode = Enum.VelocityConstraintMode.Plane
+	velocity.PrimaryTangentAxis = Vector3.xAxis
+	velocity.SecondaryTangentAxis = Vector3.zAxis
+	velocity.PlaneVelocity = Vector2.new(flat.X, flat.Z)
+	velocity.MaxForce = 1e5
+	velocity.Parent = root
+	task.delay(duration, function()
+		velocity:Destroy()
+		attachment:Destroy()
+	end)
+end
+
+local function canCrossover(): boolean
+	return MatchClient.GetHeldBall() ~= nil and not ShootController.IsHolding()
+end
+
+local function tryCrossover(): boolean
+	if not canCrossover() then
+		return false
+	end
+	local now = os.clock()
+	if now - lastCrossover < MOVES.CrossoverCooldown then
+		return true -- still ours (swallow the key), just on cooldown
+	end
+	lastCrossover = now
+	local ball = MatchClient.GetHeldBall()
+	-- Cross to the other hand
+	local direction = if ball and ball:GetAttribute("Hand") == "Left" then 1 else -1
+	crossoverRemote:FireServer(direction)
+	local root = getRoot()
+	if root then
+		burst(root.CFrame.RightVector * direction, MOVES.CrossoverSpeed, MOVES.CrossoverDuration)
+	end
+	return true
+end
+
+local function trySteal(): boolean
+	if not MatchClient.CanStealNow() then
+		return false
+	end
+	local now = os.clock()
+	if now - lastSteal < DEFENSE.StealCooldown then
+		return true
+	end
+	lastSteal = now
+	stealRemote:FireServer()
+	local root = getRoot()
+	if root then
+		burst(root.CFrame.LookVector, MOVES.StealLungeSpeed, MOVES.StealLungeDuration)
+	end
+	return true
+end
+
+local function makeButton(name: string, text: string, color: Color3): TextButton
+	local touchButton = ShootController.GetTouchButton()
+	local button = UIKit.new("TextButton", {
+		Name = name,
+		Size = UDim2.fromOffset(90, 90),
+		BackgroundColor3 = color,
+		BackgroundTransparency = 0.1,
+		Text = text,
+		TextColor3 = Config.UI.Text,
+		Font = Config.UI.FontHeavy,
+		TextScaled = true,
+		AutoButtonColor = true,
+		Selectable = false,
+		Visible = false,
+		Parent = touchButton.Parent,
+	})
+	UIKit.new("UICorner", { CornerRadius = UDim.new(0.5, 0), Parent = button })
+	UIKit.new("UIPadding", { PaddingLeft = UDim.new(0.16, 0), PaddingRight = UDim.new(0.16, 0), Parent = button })
+	UIKit.new("UITextSizeConstraint", { MaxTextSize = 20, Parent = button })
+	UIKit.stroke(Color3.new(1, 1, 1), 3, 0.3).Parent = button
+	return button
+end
+
+-- STEAL takes SHOOT's spot (they never show together); MOVE sits just above SHOOT
+local function layoutButtons()
+	ShootController.LayoutTouchButton()
+	local shoot = ShootController.GetTouchButton()
+	stealButton.AnchorPoint = shoot.AnchorPoint
+	stealButton.Position = shoot.Position
+	stealButton.Size = shoot.Size
+	local size = shoot.Size.X.Offset
+	local moveSize = math.floor(size * 0.75)
+	moveButton.AnchorPoint = shoot.AnchorPoint
+	moveButton.Size = UDim2.fromOffset(moveSize, moveSize)
+	local p = shoot.Position
+	moveButton.Position = UDim2.new(p.X.Scale, p.X.Offset + (size - moveSize) / 2, p.Y.Scale, p.Y.Offset - moveSize - 12)
+end
+
+local function refreshTouch()
+	local touch = UserInputService.TouchEnabled
+	local showSteal = touch and MatchClient.CanStealNow()
+	local showMove = touch and canCrossover()
+	if (showSteal and not stealButton.Visible) or (showMove and not moveButton.Visible) then
+		layoutButtons()
+	end
+	stealButton.Visible = showSteal
+	moveButton.Visible = showMove
+end
+
+function MovesController.Init()
+	stealRemote = Net.Event("Steal")
+	crossoverRemote = Net.Event("Crossover")
+
+	-- Bound after ShootController, so these get first look at the shared keys:
+	-- E / X / R2 steal only when the opponent has the ball, otherwise they shoot.
+	ContextActionService:BindAction(STEAL_ACTION, function(_, state)
+		if state == Enum.UserInputState.Begin and trySteal() then
+			return Enum.ContextActionResult.Sink
+		end
+		return Enum.ContextActionResult.Pass
+	end, false, Enum.KeyCode.F, Enum.KeyCode.E, Enum.KeyCode.ButtonX, Enum.KeyCode.ButtonR2)
+	ContextActionService:BindAction(CROSSOVER_ACTION, function(_, state)
+		if state == Enum.UserInputState.Begin and tryCrossover() then
+			return Enum.ContextActionResult.Sink
+		end
+		return Enum.ContextActionResult.Pass
+	end, false, Enum.KeyCode.Q, Enum.KeyCode.ButtonL1)
+
+	stealButton = makeButton("Steal", "STEAL", Config.UI.Home)
+	moveButton = makeButton("Move", "MOVE", Config.UI.PanelLight)
+	stealButton.Activated:Connect(function()
+		trySteal()
+	end)
+	moveButton.Activated:Connect(function()
+		tryCrossover()
+	end)
+
+	MatchClient.Changed:Connect(refreshTouch)
+	local camera = workspace.CurrentCamera
+	if camera then
+		camera:GetPropertyChangedSignal("ViewportSize"):Connect(function()
+			task.defer(layoutButtons)
+		end)
+	end
+	refreshTouch()
+end
+
+return MovesController

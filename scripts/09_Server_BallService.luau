@@ -88,6 +88,8 @@ local function setHolder(ball: Ball, player: Player?)
 	ball.Holder = player
 	ball.Part:SetAttribute("HolderUserId", if player then player.UserId else 0)
 	ball.Part:SetAttribute("Shooting", false)
+	-- Which hand the ball is in (crossovers switch it; client visuals mirror it)
+	ball.Part:SetAttribute("Hand", "Right")
 end
 
 local function updateAntiGravity(ball: Ball)
@@ -309,6 +311,31 @@ end
 function BallService.NewShotId(): number
 	nextShotId += 1
 	return nextShotId
+end
+
+-- Knock a held ball loose (steal poke, blocked shot). `toucher` becomes the
+-- last touch for out-of-bounds; the old holder can't grab it back right away.
+function BallService.Knock(ball: Ball, from: Vector3, velocity: Vector3, toucher: Player, regrabDelay: number): boolean
+	if ball.State ~= "Held" then
+		return false
+	end
+	local previous = ball.Holder
+	freePhysics(ball)
+	ball.TouchedHoop = false
+	ball.TouchedRim = false
+	setHolder(ball, nil)
+	ball.Shot = nil
+	local part = ball.Part
+	part.CFrame = CFrame.new(from)
+	part.AssemblyLinearVelocity = velocity
+	part.AssemblyAngularVelocity = Vector3.zero
+	ball.LastPosition = from
+	ball.LastTouch = toucher
+	if previous then
+		ball.NoPickupUntil[previous] = os.clock() + regrabDelay
+	end
+	setState(ball, "Loose")
+	return true
 end
 
 -- Launch a shot. Only valid while `shot.Shooter` holds the ball.

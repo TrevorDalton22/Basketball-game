@@ -26,6 +26,7 @@ type Visual = {
 	Marker: BillboardGui,
 	Phase: number,
 	CurrentOffset: CFrame,
+	HandSide: number, -- +1 right hand, -1 left hand (eased during a crossover)
 }
 
 local visuals: { [BasePart]: Visual } = {}
@@ -86,6 +87,7 @@ local function createVisual(ball: BasePart): Visual
 		Marker = marker,
 		Phase = 0,
 		CurrentOffset = BALL.HoldOffset,
+		HandSide = 1,
 	}
 end
 
@@ -139,16 +141,20 @@ local function updateVisual(v: Visual, dt: number)
 
 	local target: CFrame
 	if ball:GetAttribute("Shooting") == true then
-		target = BALL.ShootPoseOffset
+		local pose = BALL.ShootPoseOffset
+		target = CFrame.new(pose.X * v.HandSide, pose.Y, pose.Z)
 	else
 		local velocity = root.AssemblyLinearVelocity
 		local speed = Vector3.new(velocity.X, 0, velocity.Z).Magnitude
 		local rate = BALL.DribbleRate * (0.6 + 0.4 * math.clamp(speed / Config.Movement.WalkSpeed, 0, 1))
 		v.Phase = (v.Phase + dt * rate) % 1
 		local hold = BALL.HoldOffset
+		-- Crossover: swing the ball across to the other hand
+		local handTarget = if ball:GetAttribute("Hand") == "Left" then -1 else 1
+		v.HandSide += (handTarget - v.HandSide) * math.clamp(dt * 18, 0, 1)
 		local height = math.abs(math.sin(v.Phase * math.pi))
 		local y = BALL.DribbleFloorOffset + (hold.Y - BALL.DribbleFloorOffset) * height
-		target = CFrame.new(hold.X, y, hold.Z)
+		target = CFrame.new(hold.X * v.HandSide, y, hold.Z)
 	end
 	-- Ease toward the shot pose, snap for the dribble so the bounce stays crisp
 	local alpha = if ball:GetAttribute("Shooting") == true then math.clamp(dt * 14, 0, 1) else 1

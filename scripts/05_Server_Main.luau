@@ -39,6 +39,8 @@ local EXPECTED: { Expected } = {
 	{ Path = { "StarterPlayer", "StarterPlayerScripts", "ClientMain", "ShootController" }, Class = "ModuleScript", File = "17_Client_ShootController" },
 	{ Path = { "StarterPlayer", "StarterPlayerScripts", "ClientMain", "BallVisuals" }, Class = "ModuleScript", File = "18_Client_BallVisuals" },
 	{ Path = { "StarterPlayer", "StarterPlayerScripts", "ClientMain", "Hud" }, Class = "ModuleScript", File = "19_Client_Hud" },
+	{ Path = { "ServerScriptService", "Server", "MovesService" }, Class = "ModuleScript", File = "20_Server_MovesService" },
+	{ Path = { "StarterPlayer", "StarterPlayerScripts", "ClientMain", "MovesController" }, Class = "ModuleScript", File = "21_Client_MovesController" },
 }
 
 local SEARCH_ROOTS = { "Workspace", "ReplicatedStorage", "ReplicatedFirst", "ServerScriptService", "ServerStorage", "StarterPlayer", "StarterGui", "StarterPack", "Lighting" }
@@ -186,7 +188,7 @@ if #problems > 0 then
 	fail(("%d setup problem(s) found"):format(#problems), problems)
 	return
 end
-print(("%s ✓ All 19 scripts found in the right places"):format(TAG))
+print(("%s ✓ All %d scripts found in the right places"):format(TAG, #EXPECTED - 2))
 
 local Shared = ReplicatedStorage:WaitForChild("Shared")
 local Server = script.Parent
@@ -215,7 +217,7 @@ for _, name in { "Config", "Signal", "Net", "BasketballMath" } do
 		return
 	end
 end
-for _, name in { "CharacterService", "RemoteGuard", "CourtBuilder", "BallService", "MatchService", "QueueService", "ShotService" } do
+for _, name in { "CharacterService", "RemoteGuard", "CourtBuilder", "BallService", "MatchService", "QueueService", "ShotService", "MovesService" } do
 	if not load(Server, name) then
 		return
 	end
@@ -228,6 +230,7 @@ local BallService = loaded.BallService
 local MatchService = loaded.MatchService
 local QueueService = loaded.QueueService
 local ShotService = loaded.ShotService
+local MovesService = loaded.MovesService
 
 local courts: { any } = {}
 local function startStep(name: string, fn: () -> ()): boolean
@@ -260,6 +263,9 @@ local steps: { { Name: string, Run: () -> () } } = {
 	end },
 	{ Name = "Shooting", Run = function()
 		ShotService.Init()
+	end },
+	{ Name = "Steals and moves", Run = function()
+		MovesService.Init()
 	end },
 }
 for _, entry in steps do

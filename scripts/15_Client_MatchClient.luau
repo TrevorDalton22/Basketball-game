@@ -123,4 +123,16 @@ function MatchClient.CanShootNow(): boolean
 	return state == "Idle"
 end
 
+-- True when we're in a live match and our opponent has the ball (we can steal).
+-- The server still validates every steal.
+function MatchClient.CanStealNow(): boolean
+	local court, role = MatchClient.GetMyCourt()
+	if not court or role ~= "Playing" or court:GetAttribute("State") ~= "Live" then
+		return false
+	end
+	local ball = MatchClient.GetBall(court)
+	local holder = if ball then ball:GetAttribute("HolderUserId") else 0
+	return typeof(holder) == "number" and holder ~= 0 and holder ~= player.UserId
+end
+
 return MatchClient

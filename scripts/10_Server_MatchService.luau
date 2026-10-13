@@ -688,6 +688,15 @@ function MatchService.StartMatch(cs: CourtState, home: Player, away: Player): bo
 	return true
 end
 
+-- If `player` is in a Live match: that court's ball and their opponent
+function MatchService.GetLiveMatch(player: Player): (any?, Player?)
+	local cs = playerCourt[player]
+	if not cs or cs.State ~= "Live" then
+		return nil, nil
+	end
+	return cs.Ball, opponentOf(cs, player)
+end
+
 -- Can `player` shoot `ball` right now? Returns context for ShotService or nil.
 function MatchService.GetShotContext(ball: any, player: Player): { MatchId: number?, Practice: boolean, Defender: Player? }?
 	local cs = courtStateForBall(ball)

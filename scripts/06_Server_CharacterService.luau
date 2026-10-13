@@ -25,6 +25,9 @@ CharacterService.Died = Signal.new()
 
 local frozen: { [Player]: boolean } = {}
 local inMatch: { [Player]: boolean } = {}
+-- Temporary slow-downs (missed steals, broken ankles): when they end and how slow
+type Slow = { Until: number, Speed: number }
+local slowed: { [Player]: Slow } = {}
 
 type Sample = { Position: Vector3, Time: number }
 local samples: { [Player]: Sample } = {}
@@ -73,8 +76,9 @@ local function applyMovement(player: Player)
 		return
 	end
 	local isFrozen = frozen[player] == true
+	local slow = slowed[player]
 	humanoid.UseJumpPower = false
-	humanoid.WalkSpeed = if isFrozen then 0 else Config.Movement.WalkSpeed
+	humanoid.WalkSpeed = if isFrozen then 0 elseif slow then slow.Speed else Config.Movement.WalkSpeed
 	humanoid.JumpHeight = if isFrozen then 0 else Config.Movement.JumpHeight
 	-- Anchoring on the server is what actually holds the player in place:
 	-- the client owns its character physics and could ignore WalkSpeed.
@@ -126,6 +130,7 @@ function CharacterService.Init()
 	Players.PlayerRemoving:Connect(function(player)
 		frozen[player] = nil
 		inMatch[player] = nil
+		slowed[player] = nil
 		samples[player] = nil
 		suspiciousUntil[player] = nil
 	end)
@@ -170,6 +175,25 @@ function CharacterService.SetFrozen(player: Player, isFrozen: boolean)
 	resetSample(player)
 end
 
+-- Slow a player's running for a moment (stacks by taking the slower/longer one)
+function CharacterService.Slow(player: Player, duration: number, speed: number)
+	if not player.Parent then
+		return
+	end
+	local untilTime = os.clock() + duration
+	local current = slowed[player]
+	if current then
+		untilTime = math.max(untilTime, current.Until)
+		speed = math.min(speed, current.Speed)
+	end
+	slowed[player] = { Until = untilTime, Speed = speed }
+	applyMovement(player)
+end
+
+function CharacterService.IsSlowed(player: Player): boolean
+	return slowed[player] ~= nil
+end
+
 -- Participants collide with each other but not with bystanders
 function CharacterService.SetInMatch(player: Player, value: boolean)
 	if value and player.Parent then
@@ -206,6 +230,15 @@ end
 -- Called from Main's Heartbeat. Samples positions a few times a second and
 -- flags anyone whose horizontal speed is far beyond what running allows.
 function CharacterService.Update(dt: number)
+	-- End expired slow-downs
+	local clock = os.clock()
+	for player, slow in slowed do
+		if clock >= slow.Until then
+			slowed[player] = nil
+			applyMovement(player)
+		end
+	end
+
 	sampleTimer += dt
 	if sampleTimer < ANTI.SampleInterval then
 		return

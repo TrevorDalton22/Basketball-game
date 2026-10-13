@@ -135,6 +135,37 @@ Config.Match = {
 	MaxResets = 3, -- resetting more often than this in one match forfeits it
 }
 
+-- Defense: steals and blocks (matches only)
+Config.Defense = {
+	StealRange = 5.5, -- max flat distance from the defender to the ball carrier
+	StealFacingDot = 0.2, -- the defender must roughly face the ball carrier
+	StealCooldown = 1.4,
+	StealBaseChance = 0.4,
+	StealCloseBonus = 0.3, -- extra chance when right on top of the ball carrier
+	StealMissSlowTime = 0.6, -- a missed reach slows the defender this long…
+	StealMissSpeed = 9, -- …to this WalkSpeed
+	AnklesSlowTime = 1.1, -- reaching during a crossover: a longer stumble
+	AnklesSpeed = 4,
+	StolenRegrabDelay = 0.7, -- the player who was stripped can't grab it straight back
+	PokeSpeed = 13, -- how hard a steal knocks the ball loose
+
+	BlockRange = 6.5, -- defender within this flat distance of the shooter…
+	BlockFacingDot = 0.3, -- …and between the shooter and the rim…
+	BlockMinRise = 1.4, -- …with their root at least this far above standing height
+	BlockChance = 0.8,
+	BlockedRegrabDelay = 0.5,
+}
+
+-- Offensive moves
+Config.Moves = {
+	CrossoverCooldown = 1.1,
+	CrossoverImmunity = 0.45, -- steal-proof window after a crossover
+	CrossoverSpeed = 30, -- sideways burst (client), studs/s
+	CrossoverDuration = 0.18,
+	StealLungeSpeed = 20, -- small forward lunge when reaching (client, cosmetic)
+	StealLungeDuration = 0.12,
+}
+
 Config.Players = {
 	RespawnTime = 2, -- seconds (Roblox default is 5)
 }

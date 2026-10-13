@@ -279,4 +279,13 @@ function ShootController.IsHolding(): boolean
 	return holding
 end
 
+-- The SHOOT touch button (MovesController lays its STEAL/MOVE buttons out from it)
+function ShootController.GetTouchButton(): TextButton
+	return touchButton
+end
+
+function ShootController.LayoutTouchButton()
+	placeTouchButton()
+end
+
 return ShootController

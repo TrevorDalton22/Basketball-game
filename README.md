@@ -22,13 +22,16 @@ This is a standalone project. It isn't connected to any other game.
 
 ## What's in this version
 
-**Phase 3, the first playable prototype**
+**Phase 5, step 1: 1v1 defense**, built on the Phase 3 prototype
 
 - **Street park:** grass, a concrete plaza, trees, benches, floodlights, a STREET HOOPS entrance arch and a sunset lighting setup. It's all built by script when the server starts.
 - **One 1v1 half court:** painted floor, key, three-point line with corners, a glass backboard, a physical rim (the ball can bounce off it), a net, a fence and a live status sign.
 - **Queue pads:** stand on the blue **HOME** or red **AWAY** pad. When both are taken, the match starts after 2 seconds. You can step off or press **LEAVE** at any time. While a court is in a game its pads show **IN GAME**, and anyone who walks onto the court is moved off.
 - **Ball possession:** walk into a loose ball to pick it up. Only one player can hold it at a time, and the server decides who has it.
 - **Timed shooting:** hold the shoot button and release when the meter is in the green. The release decides the shot: early means short, late means long or off the glass, and perfect almost always goes in. A defender standing in front of you lowers your chances.
+- **Steals:** on defense, get close, face the ball carrier and press steal. The closer you are, the better your chance. A successful steal knocks the ball loose. A miss leaves you slowed for a moment, so spamming it doesn't pay.
+- **Blocks:** jump in front of a shooter as they release. If you're in the air, close and between them and the rim, you can reject the shot into a loose ball.
+- **Crossovers:** on offense, the crossover button bursts you sideways and switches the ball to your other hand. For a split second you can't be stolen from. A defender who reaches during it gets their **ankles broken** and stumbles.
 - **Scoring:** 2 points inside the arc, 3 outside (configurable). Every basket is checked on the server and counted once, for the right player.
 - **Match flow:** 3-2-1 countdown, 4-minute clock, first to 15.
   - **Overtime:** a tie when time runs out goes to "next basket wins". Overtime ends in a draw after 2 minutes.
@@ -42,7 +45,7 @@ This is a standalone project. It isn't connected to any other game.
 - **Practice mode:** when a court has no match, anyone can shoot around with its ball. No points count.
 - **HUD:** scoreboard with a possession dot, shot clock, shot meter, queue panel, banners, toasts, results and context hints. Works on **PC, phone and controller**.
 
-Progression (wins, losses, points and currency saved with DataStores) and the extra moves are planned for Phase 5. See the [Roadmap](#roadmap).
+Layups and dunks, progression (wins, losses, points and currency saved with DataStores) and more courts come next. See the [Roadmap](#roadmap).
 
 ## Controls
 
@@ -51,6 +54,9 @@ Progression (wins, losses, points and currency saved with DataStores) and the ex
 | Move / jump | WASD / Space | Left stick / A (✕) | Thumbstick / jump button |
 | Pick up the ball | Walk into it | Walk into it | Walk into it |
 | Shoot (hold, release in the green) | **E** | **R2** (or X / □) | **SHOOT** button |
+| Crossover (when you have the ball) | **Q** | **L1** | **MOVE** button |
+| Steal (when they have the ball) | **E** (or F) | **R2** (or X / □) | **STEAL** button |
+| Block | Jump (Space) in front of the shooter | A (✕) | Jump button |
 | Leave the queue | Backspace or the LEAVE button | B (○) | LEAVE button |
 | Leave the match (press twice) | LEAVE MATCH button | D-pad down | LEAVE MATCH button |
 
@@ -58,7 +64,7 @@ Progression (wins, losses, points and currency saved with DataStores) and the ex
 
 ## Build it in Roblox Studio from scratch
 
-This takes about 15 minutes. You create **2 folders and 19 scripts** and paste the code from the [`scripts/`](scripts) folder into each one. Rojo and plugins aren't needed.
+This takes about 15 minutes. You create **2 folders and 21 scripts** and paste the code from the [`scripts/`](scripts) folder into each one. Rojo and plugins aren't needed.
 
 ### Step 1: Create a new, empty place
 
@@ -107,8 +113,10 @@ How to add an object: hover over the parent in the Explorer, click **⊕**, and 
 | 17 | StarterPlayer › StarterPlayerScripts › **ClientMain** | `ShootController` | ModuleScript | [`17_Client_ShootController.luau`](scripts/17_Client_ShootController.luau) |
 | 18 | StarterPlayer › StarterPlayerScripts › **ClientMain** | `BallVisuals` | ModuleScript | [`18_Client_BallVisuals.luau`](scripts/18_Client_BallVisuals.luau) |
 | 19 | StarterPlayer › StarterPlayerScripts › **ClientMain** | `Hud` | ModuleScript | [`19_Client_Hud.luau`](scripts/19_Client_Hud.luau) |
+| 20 | ServerScriptService › Server | `MovesService` | ModuleScript | [`20_Server_MovesService.luau`](scripts/20_Server_MovesService.luau) |
+| 21 | StarterPlayer › StarterPlayerScripts › **ClientMain** | `MovesController` | ModuleScript | [`21_Client_MovesController.luau`](scripts/21_Client_MovesController.luau) |
 
-⚠️ Scripts **14–19 go inside the `ClientMain` LocalScript**. Hover over `ClientMain` itself and click ⊕. Don't add them to StarterPlayerScripts.
+⚠️ Scripts **14–19 and 21 go inside the `ClientMain` LocalScript**. Hover over `ClientMain` itself and click ⊕. Don't add them to StarterPlayerScripts.
 
 When you're done, the Explorer should look like this:
 
@@ -126,6 +134,7 @@ ServerScriptService
    ├─ CourtBuilder
    ├─ Main            ← Script
    ├─ MatchService
+   ├─ MovesService
    ├─ QueueService
    ├─ RemoteGuard
    └─ ShotService
@@ -135,6 +144,7 @@ StarterPlayer
       ├─ BallVisuals
       ├─ Hud
       ├─ MatchClient
+      ├─ MovesController
       ├─ ShootController
       ├─ ShotMeter
       └─ UIKit
@@ -172,7 +182,10 @@ Click **File → Save to Roblox** (Ctrl+S).
 3. After about 2 seconds both players are moved onto the court, frozen in place for the **3-2-1** countdown. One player, chosen at random, starts with the ball.
 4. What to check:
    - [ ] The scoreboard shows both names, the scores, the game clock, "FIRST TO 15" and the **SHOT** clock.
-   - [ ] Only the ball carrier can shoot. The other player can grab rebounds and loose balls. (Steals come in Phase 5.)
+   - [ ] Only the ball carrier can shoot. The other player can grab rebounds and loose balls.
+   - [ ] **Steal:** as the defender, get within a couple of studs, face the ball carrier and press **E**. You see **STEAL!** and the ball pops loose (not every time). From far away, or facing the wrong way, you're slowed for a moment instead.
+   - [ ] **Crossover:** as the ball carrier, press **Q**. You burst sideways and the ball switches hands. If the defender reaches right then, they see **ANKLES!** and stumble.
+   - [ ] **Block:** as the defender, stand between the shooter and the hoop and jump as they release. You see **BLOCKED!** and the ball flies loose.
    - [ ] Shots from beyond the arc score **3** and shots inside score **2**. After a basket, the player who was scored on gets the ball at the top of the key.
    - [ ] Keeping possession for 20 seconds without hitting the rim gives the ball to the opponent (**SHOT CLOCK**).
    - [ ] Stepping out of bounds with the ball, or letting it roll out, is a turnover.
@@ -208,12 +221,16 @@ Every gameplay number is in **ReplicatedStorage › Shared › Config**. The mos
 | `Shot.MakeChance` | 0.97 / 0.5 / 0.05 | Make chance for Perfect / Good / Early or Late releases |
 | `Movement.WalkSpeed` | 18 | Player run speed |
 | `Ball.Gravity` | 80 | Lower than characters' gravity for a nicer arc |
+| `Defense.StealRange` / `StealBaseChance` / `StealCloseBonus` | 5.5 / 0.4 / 0.3 | Steal reach and success chance |
+| `Defense.StealCooldown` | 1.4 | Seconds between steal attempts |
+| `Defense.BlockRange` / `BlockChance` | 6.5 / 0.8 | How close a jumping defender must be, and how often it blocks |
+| `Moves.CrossoverCooldown` / `CrossoverImmunity` | 1.1 / 0.45 | Crossover spacing and its steal-proof window |
 
 ## Troubleshooting
 
-**First, read the Output window** (View → Output) right after you press Play. When the server starts, `Main` checks that all 19 scripts are in the right places, then prints one of these:
+**First, read the Output window** (View → Output) right after you press Play. When the server starts, `Main` checks that all 21 scripts are in the right places, then prints one of these:
 
-- `[Street Hoops] ✓ All 19 scripts found…` followed by `✓ Server ready`: everything loaded.
+- `[Street Hoops] ✓ All 21 scripts found…` followed by `✓ Server ready`: everything loaded.
 - `[Street Hoops] ✗ … setup problem(s) found`, followed by a numbered list. Each line says exactly what's wrong, for example *"Config is not where it should be. Found: Workspace.Config. Move it to ReplicatedStorage > Shared > Config"*. A grey floor and a red **SETUP PROBLEM** sign also appear in the game, so you don't fall forever. Fix each item and press Play again.
 - **No `[Street Hoops]` lines at all** means `Main` itself isn't running. Check that:
   1. `Main` is a **Script**. Its Explorer icon is a page with a blue arrow. A LocalScript (person icon) or a ModuleScript doesn't run on the server.
@@ -226,7 +243,7 @@ Every gameplay number is in **ReplicatedStorage › Shared › Config**. The mos
 | You fall forever and there's no map | `Main` isn't running. See the four checks above. |
 | A **SETUP PROBLEM** sign on a grey floor | Read the numbered `[Street Hoops]` lines in Output and fix each one. |
 | `… failed to load` with an error message | That script's code is incomplete or pasted into the wrong script. Copy it again from GitHub (Ctrl+A in Studio, then Ctrl+V). |
-| No HUD or meter (but the map is there) | `ClientMain` isn't a **LocalScript**, it's disabled, or modules 14–19 aren't its direct children. |
+| No HUD or meter (but the map is there) | `ClientMain` isn't a **LocalScript**, it's disabled, or modules 14–19 and 21 aren't its direct children. |
 | Warning about `Baseplate` / `SpawnLocation` | Delete them (Step 2). |
 
 If you see a red error, copy it from the Output window and send it to me, including the script name and line number.
@@ -242,6 +259,7 @@ If you see a red error, copy it from the Output window and send it to me, includ
 | Who holds the ball | Server (`BallService`) | One holder at a time. Pickups are refused right after a suspicious teleport. |
 | Release timing | Server's own measurement | The client's value may only nudge it by ±0.025 s to smooth out network lag. |
 | Make or miss | Server (`ShotService`) | Based on timing, distance and a defender in front. Then real physics plays the shot. A decided miss counts only if it really bounces in off the rim or glass. |
+| Steals, crossovers, blocks | Server (`MovesService`, `ShotService`) | Distance, facing, cooldowns and timing are all checked on the server, and the server rolls the chance. |
 | Points | Server (`MatchService`) | Counted from a server-detected basket, once per shot, only for that match's shooter. |
 | Clock, shot clock, winner | Server (`MatchService`) | Published as attributes on the court model. |
 | Queue | Server (`QueueService`) | Checked by standing on the pad. |
@@ -273,6 +291,8 @@ If you see a red error, copy it from the Output window and send it to me, includ
 | ShootController | Keyboard, controller and touch shooting |
 | BallVisuals | Dribble animation, shot pose, ball outline, possession marker (visual only) |
 | Hud | Scoreboard, banners, toasts, queue panel, results, hints |
+| MovesService | Validates steals and crossovers (blocks are checked in ShotService at release) |
+| MovesController | Steal and crossover input on keyboard, controller and touch |
 
 ---
 
@@ -280,13 +300,13 @@ If you see a red error, copy it from the Output window and send it to me, includ
 
 Each step is added on its own and tested before the next one starts:
 
-1. **Phase 4:** test and fix the prototype with real Studio play sessions *(next)*.
-2. **Dribbling moves:** crossovers and hesitation, using animations you upload in the Animation Editor.
-3. **Layups and dunks:** context shots near the rim.
-4. **Defense:** steals (timed reach, server-validated) and blocks.
-5. **Progression:** wins, losses, total points and currency saved with DataStoreService, with retries and safe error handling.
-6. **More courts:** add entries to `Config.Courts`.
-7. **Cosmetics:** ball skins, outfits, court effects and emotes, unlocked with currency.
+1. ~~Phase 3/4: playable prototype, tested in Studio~~ ✓
+2. ~~Defense: steals, blocks, and crossovers to beat them~~ ✓ *(this version)*
+3. **Layups and dunks:** context finishes near the rim *(next)*
+4. **Progression:** wins, losses, total points and currency saved with DataStoreService, with retries and safe error handling
+5. **More courts:** add entries to `Config.Courts`
+6. **Animations:** dribble, shot and dunk animations, made in the Animation Editor and uploaded by you
+7. **Cosmetics:** ball skins, outfits, court effects and emotes, unlocked with currency
 
 ## Updating your copy
 
