@@ -30,7 +30,7 @@ This is a standalone project. It isn't connected to any other game.
 - **Ball possession:** walk into a loose ball to pick it up. Only one player can hold it at a time, and the server decides who has it.
 - **Timed shooting:** hold the shoot button and release when the meter is in the green. The release decides the shot: early means short, late means long or off the glass, and perfect almost always goes in. A defender standing in front of you lowers your chances.
 - **Steals:** on defense, get close, face the ball carrier and press steal. The closer you are, the better your chance. A successful steal knocks the ball loose. A miss leaves you slowed for a moment, so spamming it doesn't pay.
-- **Blocks:** jump in front of a shooter as they release. If you're in the air, close and between them and the rim, you can reject the shot into a loose ball.
+- **Blocks:** react to the shot. Be on the ground when the shooter starts, then jump in front of them before they release. If you're in the air, close and between them and the rim, you can reject the shot into a loose ball. Bunny-hopping or hovering doesn't block anything.
 - **Crossovers:** on offense, the crossover button bursts you sideways and switches the ball to your other hand. For a split second you can't be stolen from. A defender who reaches during it gets their **ankles broken** and stumbles.
 - **Scoring:** 2 points inside the arc, 3 outside (configurable). Every basket is checked on the server and counted once, for the right player.
 - **Match flow:** 3-2-1 countdown, 4-minute clock, first to 15.
@@ -183,9 +183,9 @@ Click **File → Save to Roblox** (Ctrl+S).
 4. What to check:
    - [ ] The scoreboard shows both names, the scores, the game clock, "FIRST TO 15" and the **SHOT** clock.
    - [ ] Only the ball carrier can shoot. The other player can grab rebounds and loose balls.
-   - [ ] **Steal:** as the defender, get within a couple of studs, face the ball carrier and press **E**. You see **STEAL!** and the ball pops loose (not every time). From far away, or facing the wrong way, you're slowed for a moment instead.
+   - [ ] **Steal:** as the defender, get within a few studs of the ball carrier and press **E**. Your character turns to face them and reaches. You see **STEAL!** and the ball pops loose (not every time). From too far away you're slowed for a moment instead.
    - [ ] **Crossover:** as the ball carrier, press **Q**. You burst sideways and the ball switches hands. If the defender reaches right then, they see **ANKLES!** and stumble.
-   - [ ] **Block:** as the defender, stand between the shooter and the hoop and jump as they release. You see **BLOCKED!** and the ball flies loose.
+   - [ ] **Block:** as the defender, stand between the shooter and the hoop on the ground, and jump right after they start their shot. You see **BLOCKED!** and the ball flies loose. Holding jump the whole time doesn't block.
    - [ ] Shots from beyond the arc score **3** and shots inside score **2**. After a basket, the player who was scored on gets the ball at the top of the key.
    - [ ] Keeping possession for 20 seconds without hitting the rim gives the ball to the opponent (**SHOT CLOCK**).
    - [ ] Stepping out of bounds with the ball, or letting it roll out, is a turnover.

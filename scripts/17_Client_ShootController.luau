@@ -34,6 +34,7 @@ local heldBall: BasePart? = nil
 local savedWalkSpeed: number? = nil
 local shotToken = 0
 local lastBeganAt = -math.huge
+local suppressUntil = 0 -- set by MovesController so a steal mash can't become an accidental shot
 local touchButton: TextButton
 local touchScreenGui: ScreenGui
 local touchConnection: RBXScriptConnection? = nil
@@ -86,7 +87,7 @@ local function begin()
 		return
 	end
 	-- Mirror the server's rate limit so we never show a meter for a shot it would drop
-	if os.clock() - lastBeganAt < SHOT.MinShotInterval + 0.05 then
+	if os.clock() - lastBeganAt < SHOT.MinShotInterval + 0.05 or os.clock() < suppressUntil then
 		return
 	end
 	local ball = MatchClient.GetHeldBall()
@@ -277,6 +278,11 @@ end
 
 function ShootController.IsHolding(): boolean
 	return holding
+end
+
+-- Ignore shot presses until `untilTime` (os.clock); never shortens an existing lockout
+function ShootController.SuppressUntil(untilTime: number)
+	suppressUntil = math.max(suppressUntil, untilTime)
 end
 
 -- The SHOOT touch button (MovesController lays its STEAL/MOVE buttons out from it)

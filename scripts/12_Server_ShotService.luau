@@ -26,7 +26,9 @@ local MAX_HOLD_TIME = SHOT.FillTime * SHOT.MaxHoldFraction
 
 -- Token: server-side id for the auto-release timer
 -- ClientToken: the client's shot number, echoed back so it can match replies
-type Pending = { Ball: any, StartedAt: number, Token: number, ClientToken: number }
+-- DefenderGrounded: the defender was on the ground when the shot began (only
+-- then can they block it: you have to react to the shot, not pogo-jump)
+type Pending = { Ball: any, StartedAt: number, Token: number, ClientToken: number, DefenderGrounded: boolean }
 
 local pending: { [Player]: Pending } = {}
 local lastShotAt: { [Player]: number } = {}
@@ -138,7 +140,11 @@ end
 local function isBlocked(defender: Player, shooterPos: Vector3, toRim: Vector3, origin: CFrame): boolean
 	local root = CharacterService.GetRoot(defender)
 	local humanoid = CharacterService.GetHumanoid(defender)
-	if not root or not humanoid or CharacterService.IsSuspicious(defender) then
+	if not root or not humanoid or not CharacterService.IsMoveLegit(defender) then
+		return false
+	end
+	-- A defender still stumbling from a missed reach or broken ankles can't block
+	if CharacterService.IsSlowed(defender) then
 		return false
 	end
 	local offset = root.Position - shooterPos
@@ -147,17 +153,29 @@ local function isBlocked(defender: Player, shooterPos: Vector3, toRim: Vector3, 
 	if gap > DEFENSE.BlockRange or gap < 1e-3 or flat.Unit:Dot(toRim) < DEFENSE.BlockFacingDot then
 		return false
 	end
-	-- A real jump: off the ground now, but standing on it moments ago (not hovering)
-	if not CharacterService.WasGroundedWithin(defender, DEFENSE.BlockMaxAirTime) then
+	-- A real jump: off the ground now, and only for as long as a jump lasts
+	if CharacterService.TimeSinceGrounded(defender) > DEFENSE.BlockMaxAirTime then
 		return false
 	end
-	-- Standing root height above the floor, from the avatar's own proportions
-	local standing = humanoid.HipHeight + root.Size.Y / 2
+	local standing = CharacterService.StandingHeight(humanoid, root)
 	local rise = (root.Position.Y - origin.Position.Y) - standing
-	if rise < DEFENSE.BlockMinRise then
+	if rise < DEFENSE.BlockMinRise or rise > Config.Movement.JumpHeight + 0.5 then
 		return false
 	end
 	return rng:NextNumber() < DEFENSE.BlockChance
+end
+
+-- Where shots are never allowed: out of bounds (in a match) and behind/beside the glass
+local function shotSpotProblem(origin: CFrame, position: Vector3, practice: boolean): string?
+	if not practice and not BasketballMath.IsInBounds(origin, position, 0) then
+		return "" -- the out-of-bounds turnover message explains it
+	end
+	local localPos = origin:PointToObjectSpace(position)
+	local boardHalf = Config.Court.BackboardSize.X / 2 + 3.5
+	if localPos.Z < Config.Court.BackboardZ + 0.3 and math.abs(localPos.X) <= boardHalf then
+		return "No shots from behind the backboard"
+	end
+	return nil
 end
 
 local function resolveShot(player: Player, entry: Pending, clientHold: number?)
@@ -172,25 +190,21 @@ local function resolveShot(player: Player, entry: Pending, clientHold: number?)
 	local function reject(reason: string)
 		ball.Part:SetAttribute("Shooting", false)
 		feedback:FireClient(player, "ShotRejected", { Reason = reason, Token = entry.ClientToken })
+		-- A refused shot leaves the ball in hand: open a real steal window before
+		-- the next one, so refused shots can't be chained into a steal-proof shield
+		lastShotAt[player] = os.clock() + DEFENSE.StealCooldown
 	end
 	if not context or not root then
 		reject("")
-		return
-	end
-	-- No shots from out of bounds in a match (BallService calls the turnover)
-	if not context.Practice and not BasketballMath.IsInBounds(origin, root.Position, 0) then
-		reject("") -- the out-of-bounds turnover message explains it
 		return
 	end
 	if CharacterService.IsSuspicious(player) then
 		reject("")
 		return
 	end
-	-- No shots from behind (or right beside) the backboard: the glass is in the way
-	local localPos = origin:PointToObjectSpace(root.Position)
-	local boardHalf = Config.Court.BackboardSize.X / 2 + 3.5
-	if localPos.Z < Config.Court.BackboardZ + 0.3 and math.abs(localPos.X) <= boardHalf then
-		reject("No shots from behind the backboard")
+	local problem = shotSpotProblem(origin, root.Position, context.Practice)
+	if problem then
+		reject(problem)
 		return
 	end
 
@@ -214,11 +228,11 @@ local function resolveShot(player: Player, entry: Pending, clientHold: number?)
 	local from = shooterPos + Vector3.new(0, SHOT.ReleaseHeight, 0) + toRim * SHOT.ReleaseForward
 
 	-- Blocked? The defender must be airborne, close, and between shooter and rim
-	if context.Defender and isBlocked(context.Defender, shooterPos, toRim, origin) then
+	if context.Defender and entry.DefenderGrounded and isBlocked(context.Defender, shooterPos, toRim, origin) then
 		local side = toRim:Cross(Vector3.yAxis)
 		local deflect = -toRim * rng:NextNumber(9, 15) + side * rng:NextNumber(-7, 7) + Vector3.new(0, rng:NextNumber(6, 11), 0)
 		ball.Part:SetAttribute("Shooting", false)
-		if BallService.Knock(ball, from, deflect, context.Defender, DEFENSE.BlockedRegrabDelay) then
+		if BallService.Knock(ball, from, deflect, context.Defender, DEFENSE.BlockedRegrabDelay, DEFENSE.BlockerGrabDelay) then
 			local data = { BlockerUserId = context.Defender.UserId, ShooterUserId = player.UserId }
 			feedback:FireClient(player, "Block", data)
 			feedback:FireClient(context.Defender, "Block", data)
@@ -269,13 +283,23 @@ local function onShootStart(player: Player, clientToken: any)
 		return
 	end
 	local ball = BallService.FindHeldBy(player)
-	if not ball or CharacterService.IsSuspicious(player) or not MatchService.GetShotContext(ball, player) then
+	local context = ball and MatchService.GetShotContext(ball, player)
+	local root = CharacterService.GetRoot(player)
+	if not ball or not context or not root or CharacterService.IsSuspicious(player) then
 		refuse()
 		return
 	end
+	-- Check the spot now too, so the "shooting" flag can't be raised from a
+	-- spot where the shot will be refused anyway
+	if shotSpotProblem(ball.Court.Origin, root.Position, context.Practice) then
+		refuse()
+		return
+	end
+	local defender = context.Defender
+	local defenderGrounded = defender ~= nil and CharacterService.WasGroundedWithin(defender, DEFENSE.DefenderGroundedAtShot)
 	tokenCounter += 1
 	local token = tokenCounter
-	pending[player] = { Ball = ball, StartedAt = now, Token = token, ClientToken = shotNumber }
+	pending[player] = { Ball = ball, StartedAt = now, Token = token, ClientToken = shotNumber, DefenderGrounded = defenderGrounded }
 	lastShotAt[player] = now
 	ball.Part:SetAttribute("Shooting", true)
 

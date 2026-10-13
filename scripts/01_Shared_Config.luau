@@ -138,7 +138,8 @@ Config.Match = {
 -- Defense: steals and blocks (matches only)
 Config.Defense = {
 	StealRange = 5.5, -- max flat distance from the defender to the ball carrier
-	StealFacingDot = 0.2, -- the defender must roughly face the ball carrier
+	StealFacingDot = 0.2, -- the defender must roughly face the ball carrier…
+	StealCloseRange = 3, -- …unless they're this close, where any reach counts
 	StealCooldown = 1.4,
 	StealBaseChance = 0.4,
 	StealCloseBonus = 0.3, -- extra chance when right on top of the ball carrier
@@ -153,8 +154,11 @@ Config.Defense = {
 	BlockFacingDot = 0.3, -- …and between the shooter and the rim…
 	BlockMinRise = 1.4, -- …with their root at least this far above standing height
 	BlockChance = 0.8,
-	BlockMaxAirTime = 1.0, -- must have been on the ground this recently (a real jump, not hovering)
-	BlockedRegrabDelay = 0.5,
+	BlockMaxAirTime = 0.7, -- a real jump lasts ~0.55 s; in the air longer than this = not a block
+	GroundedTolerance = 0.5, -- root within this of standing height counts as on the ground (must stay < BlockMinRise)
+	DefenderGroundedAtShot = 0.15, -- to block, the defender must have been on the ground when the shot began
+	BlockedRegrabDelay = 0.5, -- the blocked shooter can't grab the deflection straight back…
+	BlockerGrabDelay = 0.3, -- …and neither can the blocker: the ball has to actually fly loose
 }
 
 -- Offensive moves

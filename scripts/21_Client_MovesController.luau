@@ -68,8 +68,25 @@ local function burst(direction: Vector3, speed: number, duration: number)
 	end)
 end
 
+-- Same moments you could shoot (live match or practice), and not mid-shot
 local function canCrossover(): boolean
-	return MatchClient.GetHeldBall() ~= nil and not ShootController.IsHolding()
+	return MatchClient.CanShootNow() and not ShootController.IsHolding()
+end
+
+-- Small margin over the server's cooldown so network jitter never drops a press
+local COOLDOWN_MARGIN = 0.1
+
+local function carrierRoot(): BasePart?
+	local court = MatchClient.GetMyCourt()
+	local ball = court and MatchClient.GetBall(court)
+	local id = ball and ball:GetAttribute("HolderUserId")
+	local carrier = if typeof(id) == "number" then Players:GetPlayerByUserId(id) else nil
+	local character = carrier and carrier.Character
+	local root = character and character:FindFirstChild("HumanoidRootPart")
+	if root and root:IsA("BasePart") then
+		return root
+	end
+	return nil
 end
 
 local function tryCrossover(): boolean
@@ -77,7 +94,7 @@ local function tryCrossover(): boolean
 		return false
 	end
 	local now = os.clock()
-	if now - lastCrossover < MOVES.CrossoverCooldown then
+	if now - lastCrossover < MOVES.CrossoverCooldown + COOLDOWN_MARGIN then
 		return true -- still ours (swallow the key), just on cooldown
 	end
 	lastCrossover = now
@@ -97,15 +114,27 @@ local function trySteal(): boolean
 		return false
 	end
 	local now = os.clock()
-	if now - lastSteal < DEFENSE.StealCooldown then
+	-- If this steal works and we grab the ball, the next mashed press of the
+	-- same key must not turn into an instant airball
+	ShootController.SuppressUntil(now + 0.4)
+	if now - lastSteal < DEFENSE.StealCooldown + COOLDOWN_MARGIN then
 		return true
 	end
 	lastSteal = now
-	stealRemote:FireServer()
 	local root = getRoot()
-	if root then
-		burst(root.CFrame.LookVector, MOVES.StealLungeSpeed, MOVES.StealLungeDuration)
+	local target = carrierRoot()
+	if root and target and not root.Anchored then
+		-- Turn to face the ball carrier before reaching (the server checks facing)
+		local toCarrier = target.Position - root.Position
+		local flat = Vector3.new(toCarrier.X, 0, toCarrier.Z)
+		if flat.Magnitude > 1e-3 then
+			root.CFrame = CFrame.lookAt(root.Position, root.Position + flat)
+			if flat.Magnitude <= DEFENSE.StealRange then
+				burst(flat, MOVES.StealLungeSpeed, MOVES.StealLungeDuration)
+			end
+		end
 	end
+	stealRemote:FireServer()
 	return true
 end
 

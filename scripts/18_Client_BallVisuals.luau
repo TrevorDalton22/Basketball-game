@@ -27,6 +27,7 @@ type Visual = {
 	Phase: number,
 	CurrentOffset: CFrame,
 	HandSide: number, -- +1 right hand, -1 left hand (eased during a crossover)
+	LastHolderId: number,
 }
 
 local visuals: { [BasePart]: Visual } = {}
@@ -88,6 +89,7 @@ local function createVisual(ball: BasePart): Visual
 		Phase = 0,
 		CurrentOffset = BALL.HoldOffset,
 		HandSide = 1,
+		LastHolderId = 0,
 	}
 end
 
@@ -116,6 +118,12 @@ end
 local function updateVisual(v: Visual, dt: number)
 	local ball = v.Ball
 	local holderId = ball:GetAttribute("HolderUserId")
+	-- New holder: start the ball in the hand the server says, no sliding across
+	local holderNumber = if typeof(holderId) == "number" then holderId else 0
+	if holderNumber ~= v.LastHolderId then
+		v.LastHolderId = holderNumber
+		v.HandSide = if ball:GetAttribute("Hand") == "Left" then -1 else 1
+	end
 	local holder = if typeof(holderId) == "number" and holderId ~= 0 then Players:GetPlayerByUserId(holderId) else nil
 	local character = holder and holder.Character
 	local root = character and character:FindFirstChild("HumanoidRootPart")

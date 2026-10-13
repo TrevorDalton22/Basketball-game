@@ -315,7 +315,7 @@ end
 
 -- Knock a held ball loose (steal poke, blocked shot). `toucher` becomes the
 -- last touch for out-of-bounds; the old holder can't grab it back right away.
-function BallService.Knock(ball: Ball, from: Vector3, velocity: Vector3, toucher: Player, regrabDelay: number): boolean
+function BallService.Knock(ball: Ball, from: Vector3, velocity: Vector3, toucher: Player, regrabDelay: number, toucherDelay: number?): boolean
 	if ball.State ~= "Held" then
 		return false
 	end
@@ -333,6 +333,9 @@ function BallService.Knock(ball: Ball, from: Vector3, velocity: Vector3, toucher
 	ball.LastTouch = toucher
 	if previous then
 		ball.NoPickupUntil[previous] = os.clock() + regrabDelay
+	end
+	if toucherDelay and toucherDelay > 0 then
+		ball.NoPickupUntil[toucher] = os.clock() + toucherDelay
 	end
 	setState(ball, "Loose")
 	return true
@@ -391,7 +394,7 @@ local function tryPickup(ball: Ball, now: number)
 		if flat > BALL.PickupHorizontal or offset.Y < -BALL.PickupBelow or offset.Y > BALL.PickupAbove then
 			continue
 		end
-		if flat < bestDistance and filter(player) then
+		if flat < bestDistance and filter(player) and CharacterService.IsMoveLegit(player) then
 			bestDistance = flat
 			bestPlayer = player
 		end

@@ -230,10 +230,27 @@ function CharacterService.Teleport(player: Player, cframe: CFrame)
 	resetSample(player) -- a server teleport is not a speed hack
 end
 
+-- How high a standing character's root sits above the floor (R15 and R6)
+function CharacterService.StandingHeight(humanoid: Humanoid, root: BasePart): number
+	local height = humanoid.HipHeight + root.Size.Y / 2
+	if humanoid.RigType == Enum.HumanoidRigType.R6 then
+		local character = humanoid.Parent
+		local leg = character and character:FindFirstChild("Left Leg")
+		height += if leg and leg:IsA("BasePart") then leg.Size.Y else 2
+	end
+	return height
+end
+
 -- Has this match player stood on solid ground within the last `seconds`?
 function CharacterService.WasGroundedWithin(player: Player, seconds: number): boolean
 	local at = groundedAt[player]
 	return at ~= nil and os.clock() - at <= seconds
+end
+
+-- Seconds since this match player last stood on the ground (math.huge if never)
+function CharacterService.TimeSinceGrounded(player: Player): number
+	local at = groundedAt[player]
+	return if at then os.clock() - at else math.huge
 end
 
 local function trackGround(player: Player, clock: number)
@@ -247,12 +264,45 @@ local function trackGround(player: Player, clock: number)
 		groundedAt[player] = clock -- frozen on a check spot
 		return
 	end
-	groundParams.FilterDescendantsInstances = { character }
-	local standing = humanoid.HipHeight + root.Size.Y / 2
-	local hit = workspace:Raycast(root.Position, Vector3.new(0, -(standing + 1.5), 0), groundParams)
+	-- Bodies never count as ground (no standing on the shooter's head)
+	local bodies: { Instance } = {}
+	for other in inMatch do
+		if other.Character then
+			table.insert(bodies, other.Character)
+		end
+	end
+	if not table.find(bodies, character) then
+		table.insert(bodies, character)
+	end
+	groundParams.FilterDescendantsInstances = bodies
+	-- Short ray: "grounded" must never overlap "high enough to block"
+	local standing = CharacterService.StandingHeight(humanoid, root)
+	local hit = workspace:Raycast(root.Position, Vector3.new(0, -(standing + Config.Defense.GroundedTolerance), 0), groundParams)
 	if hit then
 		groundedAt[player] = clock
 	end
+end
+
+-- Checks a player's position right now against their last sample, so a quick
+-- teleport-and-back between samples is still caught at the moment it matters
+-- (steals, blocks, pickups). Returns false (and flags them) if it's impossible.
+function CharacterService.IsMoveLegit(player: Player): boolean
+	if CharacterService.IsSuspicious(player) then
+		return false
+	end
+	local root = CharacterService.GetRoot(player)
+	local last = samples[player]
+	if not root or not last then
+		return root ~= nil
+	end
+	local now = os.clock()
+	local delta = root.Position - last.Position
+	local flatDistance = Vector3.new(delta.X, 0, delta.Z).Magnitude
+	if flatDistance > ANTI.MaxFlatSpeed * (now - last.Time) + 2 then
+		suspiciousUntil[player] = now + ANTI.PenaltyTime
+		return false
+	end
+	return true
 end
 
 -- True while a player is serving a penalty for moving impossibly fast

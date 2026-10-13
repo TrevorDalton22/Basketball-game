@@ -54,46 +54,62 @@ local function onSteal(player: Player)
 	end
 	local myRoot = CharacterService.GetRoot(player)
 	local theirRoot = CharacterService.GetRoot(opponent)
-	if not myRoot or not theirRoot or CharacterService.IsSuspicious(player) then
+	-- Position is checked against the last sample right now, so teleporting
+	-- onto the carrier and back between samples doesn't work
+	if not myRoot or not theirRoot or not CharacterService.IsMoveLegit(player) then
 		return
 	end
 	lastSteal[player] = now
 
+	-- A miss slows you, and you can't scoop up a loose ball until you recover
+	-- (the server enforces that part even if a client ignores the slow-down)
+	local function penalise(slowTime: number, speed: number)
+		CharacterService.Slow(player, slowTime, speed)
+		ball.NoPickupUntil[player] = now + slowTime
+	end
+	local function miss(reason: string)
+		penalise(DEFENSE.StealMissSlowTime, DEFENSE.StealMissSpeed)
+		feedback:FireClient(player, "Steal", { Success = false, Reason = reason, StealerUserId = player.UserId })
+	end
+
 	local toCarrier = flat(theirRoot.Position - myRoot.Position)
 	local gap = toCarrier.Magnitude
+	if gap > DEFENSE.StealRange then
+		miss("Too far")
+		return
+	end
+	-- Facing only matters at arm's length; right on top of them, any reach counts
 	local facing = if gap > 1e-3 then flat(myRoot.CFrame.LookVector).Unit:Dot(toCarrier.Unit) else 1
-	if gap > DEFENSE.StealRange or facing < DEFENSE.StealFacingDot then
-		-- Swiping at air
-		CharacterService.Slow(player, DEFENSE.StealMissSlowTime, DEFENSE.StealMissSpeed)
-		feedback:FireClient(player, "Steal", { Success = false, Reason = "Too far", StealerUserId = player.UserId })
+	if gap > DEFENSE.StealCloseRange and facing < DEFENSE.StealFacingDot then
+		miss("Not facing them")
 		return
 	end
 
 	-- Reaching into a crossover: ankles broken
 	local immune = immuneUntil[opponent]
 	if immune and immune > now then
-		CharacterService.Slow(player, DEFENSE.AnklesSlowTime, DEFENSE.AnklesSpeed)
+		penalise(DEFENSE.AnklesSlowTime, DEFENSE.AnklesSpeed)
 		tellBoth(player, opponent, "Ankles", { DefenderUserId = player.UserId, HandlerUserId = opponent.UserId })
 		return
 	end
 
 	-- No reaching into a shot (that is what blocks are for)
 	if ball.Part:GetAttribute("Shooting") == true then
-		CharacterService.Slow(player, DEFENSE.StealMissSlowTime, DEFENSE.StealMissSpeed)
-		feedback:FireClient(player, "Steal", { Success = false, Reason = "Reach-in", StealerUserId = player.UserId })
+		miss("Reach-in")
 		return
 	end
 
 	local closeness = 1 - math.clamp(gap / DEFENSE.StealRange, 0, 1)
 	local chance = DEFENSE.StealBaseChance + DEFENSE.StealCloseBonus * closeness
 	if rng:NextNumber() >= chance then
-		CharacterService.Slow(player, DEFENSE.StealMissSlowTime, DEFENSE.StealMissSpeed)
-		feedback:FireClient(player, "Steal", { Success = false, Reason = "Missed", StealerUserId = player.UserId })
+		miss("Missed")
 		return
 	end
 
-	-- Poke it loose toward the defender
-	local ballPos = ball.Part.Position
+	-- Poke it loose toward the defender, starting over the carrier's root (the
+	-- held ball itself can hang over a line the carrier is standing inside)
+	local held = ball.Part.Position
+	local ballPos = Vector3.new(theirRoot.Position.X, held.Y, theirRoot.Position.Z)
 	local away = flat(myRoot.Position - ballPos)
 	local dir = if away.Magnitude > 1e-3 then away.Unit else flat(myRoot.CFrame.LookVector)
 	local velocity = dir * DEFENSE.PokeSpeed + Vector3.new(0, 6, 0)
@@ -116,6 +132,10 @@ local function onCrossover(player: Player, direction: any)
 	end
 	local ball = BallService.FindHeldBy(player)
 	if not ball or ball.Part:GetAttribute("Shooting") == true then
+		return
+	end
+	-- Only while the ball is live (or practising): not while frozen at a check
+	if not MatchService.GetShotContext(ball, player) then
 		return
 	end
 	lastCrossover[player] = now
