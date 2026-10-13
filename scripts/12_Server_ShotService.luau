@@ -147,6 +147,10 @@ local function isBlocked(defender: Player, shooterPos: Vector3, toRim: Vector3, 
 	if gap > DEFENSE.BlockRange or gap < 1e-3 or flat.Unit:Dot(toRim) < DEFENSE.BlockFacingDot then
 		return false
 	end
+	-- A real jump: off the ground now, but standing on it moments ago (not hovering)
+	if not CharacterService.WasGroundedWithin(defender, DEFENSE.BlockMaxAirTime) then
+		return false
+	end
 	-- Standing root height above the floor, from the avatar's own proportions
 	local standing = humanoid.HipHeight + root.Size.Y / 2
 	local rise = (root.Position.Y - origin.Position.Y) - standing

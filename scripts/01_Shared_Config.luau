@@ -153,6 +153,7 @@ Config.Defense = {
 	BlockFacingDot = 0.3, -- …and between the shooter and the rim…
 	BlockMinRise = 1.4, -- …with their root at least this far above standing height
 	BlockChance = 0.8,
+	BlockMaxAirTime = 1.0, -- must have been on the ground this recently (a real jump, not hovering)
 	BlockedRegrabDelay = 0.5,
 }
 

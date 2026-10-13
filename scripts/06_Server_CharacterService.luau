@@ -33,6 +33,13 @@ type Sample = { Position: Vector3, Time: number }
 local samples: { [Player]: Sample } = {}
 local suspiciousUntil: { [Player]: number } = {}
 local sampleTimer = 0
+-- Last time each match player was standing on something (checked every frame
+-- for match players only). A real jump lasts about half a second, so a
+-- "jumping" player who hasn't touched the ground for longer is hovering.
+local groundedAt: { [Player]: number } = {}
+local groundParams = RaycastParams.new()
+groundParams.FilterType = Enum.RaycastFilterType.Exclude
+groundParams.RespectCanCollide = true
 
 local function setupCollisionGroups()
 	for _, group in { GROUPS.Players, GROUPS.InMatch, GROUPS.Ball, GROUPS.BallMake, GROUPS.Hoop } do
@@ -131,6 +138,7 @@ function CharacterService.Init()
 		frozen[player] = nil
 		inMatch[player] = nil
 		slowed[player] = nil
+		groundedAt[player] = nil
 		samples[player] = nil
 		suspiciousUntil[player] = nil
 	end)
@@ -200,6 +208,7 @@ function CharacterService.SetInMatch(player: Player, value: boolean)
 		inMatch[player] = true
 	else
 		inMatch[player] = nil
+		groundedAt[player] = nil
 	end
 	local character = player.Character
 	if character then
@@ -221,6 +230,31 @@ function CharacterService.Teleport(player: Player, cframe: CFrame)
 	resetSample(player) -- a server teleport is not a speed hack
 end
 
+-- Has this match player stood on solid ground within the last `seconds`?
+function CharacterService.WasGroundedWithin(player: Player, seconds: number): boolean
+	local at = groundedAt[player]
+	return at ~= nil and os.clock() - at <= seconds
+end
+
+local function trackGround(player: Player, clock: number)
+	local character = player.Character
+	local root = CharacterService.GetRoot(player)
+	local humanoid = CharacterService.GetHumanoid(player)
+	if not character or not root or not humanoid then
+		return
+	end
+	if root.Anchored then
+		groundedAt[player] = clock -- frozen on a check spot
+		return
+	end
+	groundParams.FilterDescendantsInstances = { character }
+	local standing = humanoid.HipHeight + root.Size.Y / 2
+	local hit = workspace:Raycast(root.Position, Vector3.new(0, -(standing + 1.5), 0), groundParams)
+	if hit then
+		groundedAt[player] = clock
+	end
+end
+
 -- True while a player is serving a penalty for moving impossibly fast
 function CharacterService.IsSuspicious(player: Player): boolean
 	local untilTime = suspiciousUntil[player]
@@ -237,6 +271,9 @@ function CharacterService.Update(dt: number)
 			slowed[player] = nil
 			applyMovement(player)
 		end
+	end
+	for player in inMatch do
+		trackGround(player, clock)
 	end
 
 	sampleTimer += dt
