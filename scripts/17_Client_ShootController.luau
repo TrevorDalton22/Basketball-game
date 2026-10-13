@@ -22,11 +22,13 @@ local ShotMeter = require(Client:WaitForChild("ShotMeter"))
 local ShootController = {}
 
 local SHOT = Config.Shot
+local FINISH = Config.Finish
 local ACTION = "StreetHoops_Shoot"
 local player = Players.LocalPlayer
 
 local shootStart: RemoteEvent
 local shootRelease: RemoteEvent
+local finishRemote: RemoteEvent
 
 local holding = false
 local startedAt = 0
@@ -119,10 +121,74 @@ local function begin()
 	end)
 end
 
+-- Short burst of horizontal velocity on our own character (we own its physics).
+-- Also used by MovesController for crossovers and steal lunges.
+local function burst(direction: Vector3, speed: number, duration: number)
+	local character = player.Character
+	local root = character and character:FindFirstChild("HumanoidRootPart")
+	local flat = Vector3.new(direction.X, 0, direction.Z)
+	if not root or not root:IsA("BasePart") or root.Anchored or flat.Magnitude < 1e-3 or speed <= 0 then
+		return
+	end
+	flat = flat.Unit * speed
+	local attachment = Instance.new("Attachment")
+	attachment.Name = "StreetHoopsBurst"
+	attachment.Parent = root
+	local velocity = Instance.new("LinearVelocity")
+	velocity.Attachment0 = attachment
+	velocity.RelativeTo = Enum.ActuatorRelativeTo.World
+	velocity.VelocityConstraintMode = Enum.VelocityConstraintMode.Plane
+	velocity.PrimaryTangentAxis = Vector3.xAxis
+	velocity.SecondaryTangentAxis = Vector3.zAxis
+	velocity.PlaneVelocity = Vector2.new(flat.X, flat.Z)
+	velocity.MaxForce = 1e5
+	velocity.Parent = root
+	task.delay(duration, function()
+		velocity:Destroy()
+		attachment:Destroy()
+	end)
+end
+ShootController.Burst = burst
+
+-- Driving at the rim? Then shoot means layup/dunk (no meter). The prediction
+-- is a little stricter than the server's check so the two nearly always agree.
+local function tryFinish(): boolean
+	if holding or not MatchClient.CanShootNow() then
+		return false
+	end
+	local now = os.clock()
+	if now - lastBeganAt < SHOT.MinShotInterval + 0.05 or now < suppressUntil then
+		return false
+	end
+	local kind, rim = MatchClient.PredictFinish()
+	local humanoid = getHumanoid()
+	local character = player.Character
+	local root = character and character:FindFirstChild("HumanoidRootPart")
+	if not kind or not rim or not humanoid or not root or not root:IsA("BasePart") then
+		return false
+	end
+	lastBeganAt = now
+	shotToken += 1
+	finishRemote:FireServer(shotToken)
+
+	local toward = Vector3.new(rim.X - root.Position.X, 0, rim.Z - root.Position.Z)
+	humanoid.Jump = true
+	if kind == "Dunk" then
+		local travel = math.max(0, toward.Magnitude - FINISH.DunkStopShort)
+		burst(toward, math.min(travel / FINISH.DunkLeapTime, FINISH.DunkLeapMaxSpeed), FINISH.DunkLeapTime)
+	else
+		burst(toward, FINISH.LayupHopSpeed, FINISH.LayupHopTime)
+	end
+	return true
+end
+
 local function onAction(_name: string, state: Enum.UserInputState, _input: InputObject): Enum.ContextActionResult
 	if state == Enum.UserInputState.Begin then
 		if not MatchClient.CanShootNow() then
 			return Enum.ContextActionResult.Pass
+		end
+		if tryFinish() then
+			return Enum.ContextActionResult.Sink
 		end
 		begin()
 		return Enum.ContextActionResult.Sink
@@ -204,6 +270,9 @@ local function buildTouchButton()
 		-- Only the touch that started the shot may release it (a second finger
 		-- brushing the button must not cut the shot short)
 		local wasHolding = holding
+		if not wasHolding and tryFinish() then
+			return -- layup/dunk: fires on the press, nothing to hold
+		end
 		begin()
 		if wasHolding or not holding then
 			return
@@ -223,6 +292,7 @@ end
 function ShootController.Init()
 	shootStart = Net.Event("ShootStart")
 	shootRelease = Net.Event("ShootRelease")
+	finishRemote = Net.Event("Finish")
 	buildTouchButton()
 
 	ContextActionService:BindAction(ACTION, onAction, false, Enum.KeyCode.E, Enum.KeyCode.ButtonX, Enum.KeyCode.ButtonR2)

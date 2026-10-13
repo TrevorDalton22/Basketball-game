@@ -8,6 +8,7 @@ local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local Signal = require(ReplicatedStorage:WaitForChild("Shared"):WaitForChild("Signal"))
+local Config = require(ReplicatedStorage:WaitForChild("Shared"):WaitForChild("Config"))
 
 local MatchClient = {}
 
@@ -121,6 +122,35 @@ function MatchClient.CanShootNow(): boolean
 		return court:GetAttribute("HomeUserId") == id or court:GetAttribute("AwayUserId") == id
 	end
 	return state == "Idle"
+end
+
+-- If we're driving at the rim with the ball: "Dunk" or "Layup" (and the rim
+-- centre). A touch stricter than the server's check so the two agree.
+function MatchClient.PredictFinish(): (string?, Vector3?)
+	local ball, court = MatchClient.GetHeldBall()
+	if not ball or not court then
+		return nil, nil
+	end
+	local rim = court:GetAttribute("RimCenter")
+	local character = player.Character
+	local root = character and character:FindFirstChild("HumanoidRootPart")
+	if typeof(rim) ~= "Vector3" or not root or not root:IsA("BasePart") then
+		return nil, nil
+	end
+	local offset = Vector3.new(rim.X - root.Position.X, 0, rim.Z - root.Position.Z)
+	local distance = offset.Magnitude
+	if distance < 1e-3 then
+		return nil, nil
+	end
+	local v = root.AssemblyLinearVelocity
+	local approach = Vector3.new(v.X, 0, v.Z):Dot(offset.Unit)
+	local finish = Config.Finish
+	if distance <= finish.DunkRange - 0.3 and approach >= finish.DunkMinApproach + 1 then
+		return "Dunk", rim
+	elseif distance <= finish.LayupRange - 0.3 and approach >= finish.LayupMinApproach + 1 then
+		return "Layup", rim
+	end
+	return nil, nil
 end
 
 -- True when we're in a live match and our opponent has the ball (we can steal).

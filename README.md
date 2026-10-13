@@ -22,13 +22,14 @@ This is a standalone project. It isn't connected to any other game.
 
 ## What's in this version
 
-**Phase 5, step 1: 1v1 defense**, built on the Phase 3 prototype
+**Phase 5, step 2: layups and dunks** (after step 1, 1v1 defense), built on the Phase 3 prototype
 
 - **Street park:** grass, a concrete plaza, trees, benches, floodlights, a STREET HOOPS entrance arch and a sunset lighting setup. It's all built by script when the server starts.
 - **One 1v1 half court:** painted floor, key, three-point line with corners, a glass backboard, a physical rim (the ball can bounce off it), a net, a fence and a live status sign.
 - **Queue pads:** stand on the blue **HOME** or red **AWAY** pad. When both are taken, the match starts after 2 seconds. You can step off or press **LEAVE** at any time. While a court is in a game its pads show **IN GAME**, and anyone who walks onto the court is moved off.
 - **Ball possession:** walk into a loose ball to pick it up. Only one player can hold it at a time, and the server decides who has it.
 - **Timed shooting:** hold the shoot button and release when the meter is in the green. The release decides the shot: early means short, late means long or off the glass, and perfect almost always goes in. A defender standing in front of you lowers your chances.
+- **Layups and dunks:** drive at the rim and press shoot. There's no meter; it happens on the press. Running hard from close in is a **dunk**: you leap at the hoop and slam it. Dunks almost always go in and are very hard to block. Driving from a bit further out, or more slowly, is a **layup**: a quick hop and a soft finish. Layups go in often, but a defender in front can contest or block them. Standing still near the rim still gives you the normal jump shot with the meter.
 - **Steals:** on defense, get close, face the ball carrier and press steal. The closer you are, the better your chance. A successful steal knocks the ball loose. A miss leaves you slowed for a moment, so spamming it doesn't pay.
 - **Blocks:** react to the shot. Be on the ground when the shooter starts, then jump in front of them before they release. If you're in the air, close and between them and the rim, you can reject the shot into a loose ball. Bunny-hopping or hovering doesn't block anything.
 - **Crossovers:** on offense, the crossover button bursts you sideways and switches the ball to your other hand. For a split second you can't be stolen from. A defender who reaches during it gets their **ankles broken** and stumbles.
@@ -45,7 +46,7 @@ This is a standalone project. It isn't connected to any other game.
 - **Practice mode:** when a court has no match, anyone can shoot around with its ball. No points count.
 - **HUD:** scoreboard with a possession dot, shot clock, shot meter, queue panel, banners, toasts, results and context hints. Works on **PC, phone and controller**.
 
-Layups and dunks, progression (wins, losses, points and currency saved with DataStores) and more courts come next. See the [Roadmap](#roadmap).
+Progression (wins, losses, points and currency saved with DataStores) and more courts come next. See the [Roadmap](#roadmap).
 
 ## Controls
 
@@ -54,6 +55,7 @@ Layups and dunks, progression (wins, losses, points and currency saved with Data
 | Move / jump | WASD / Space | Left stick / A (✕) | Thumbstick / jump button |
 | Pick up the ball | Walk into it | Walk into it | Walk into it |
 | Shoot (hold, release in the green) | **E** | **R2** (or X / □) | **SHOOT** button |
+| Layup / dunk | Drive at the rim + **E** | Drive + **R2** | Drive + **SHOOT** |
 | Crossover (when you have the ball) | **Q** | **L1** | **MOVE** button |
 | Steal (when they have the ball) | **E** (or F) | **R2** (or X / □) | **STEAL** button |
 | Block | Jump (Space) in front of the shooter | A (✕) | Jump button |
@@ -186,6 +188,9 @@ Click **File → Save to Roblox** (Ctrl+S).
    - [ ] **Steal:** as the defender, get within a few studs of the ball carrier and press **E**. Your character turns to face them and reaches. You see **STEAL!** and the ball pops loose (not every time). From too far away you're slowed for a moment instead.
    - [ ] **Crossover:** as the ball carrier, press **Q**. You burst sideways and the ball switches hands. If the defender reaches right then, they see **ANKLES!** and stumble.
    - [ ] **Block:** as the defender, stand between the shooter and the hoop on the ground, and jump right after they start their shot. You see **BLOCKED!** and the ball flies loose. Holding jump the whole time doesn't block.
+   - [ ] **Dunk:** sprint straight at the rim from just inside the paint and press **E**. You leap at the hoop and see **SLAM DUNK!** (the other player sees **POSTERIZED!**).
+   - [ ] **Layup:** drive at the rim from around the free-throw line (or more slowly) and press **E**. A quick hop and a soft shot: **+2 LAYUP** when it drops.
+   - [ ] Standing still next to the rim and holding **E** still gives the normal meter jump shot.
    - [ ] Shots from beyond the arc score **3** and shots inside score **2**. After a basket, the player who was scored on gets the ball at the top of the key.
    - [ ] Keeping possession for 20 seconds without hitting the rim gives the ball to the opponent (**SHOT CLOCK**).
    - [ ] Stepping out of bounds with the ball, or letting it roll out, is a turnover.
@@ -221,6 +226,9 @@ Every gameplay number is in **ReplicatedStorage › Shared › Config**. The mos
 | `Shot.MakeChance` | 0.97 / 0.5 / 0.05 | Make chance for Perfect / Good / Early or Late releases |
 | `Movement.WalkSpeed` | 18 | Player run speed |
 | `Ball.Gravity` | 80 | Lower than characters' gravity for a nicer arc |
+| `Finish.DunkRange` / `LayupRange` | 7 / 11 | How close to the rim a drive can finish |
+| `Finish.DunkMinApproach` / `LayupMinApproach` | 12 / 5 | How fast you must be moving toward the rim (studs/s) |
+| `Finish.DunkMakeChance` / `LayupMakeChance` | 0.96 / 0.82 | Make chance before any contest |
 | `Defense.StealRange` / `StealBaseChance` / `StealCloseBonus` | 5.5 / 0.4 / 0.3 | Steal reach and success chance |
 | `Defense.StealCooldown` | 1.4 | Seconds between steal attempts |
 | `Defense.BlockRange` / `BlockChance` | 6.5 / 0.8 | How close a jumping defender must be, and how often it blocks |
@@ -283,7 +291,7 @@ If you see a red error, copy it from the Output window and send it to me, includ
 | BallService | Ball physics, possession, pickups, basket detection, out of bounds |
 | MatchService | Match state machine, scores, clocks, results, practice mode |
 | QueueService | Home/Away pads and match start |
-| ShotService | Validates shots, decides make or miss, launches the ball |
+| ShotService | Validates jump shots, layups and dunks, decides make or miss, launches the ball |
 | ClientMain | Starts the client modules |
 | UIKit | UI helpers and theme |
 | MatchClient | Reads the match state the server publishes |
@@ -301,9 +309,9 @@ If you see a red error, copy it from the Output window and send it to me, includ
 Each step is added on its own and tested before the next one starts:
 
 1. ~~Phase 3/4: playable prototype, tested in Studio~~ ✓
-2. ~~Defense: steals, blocks, and crossovers to beat them~~ ✓ *(this version)*
-3. **Layups and dunks:** context finishes near the rim *(next)*
-4. **Progression:** wins, losses, total points and currency saved with DataStoreService, with retries and safe error handling
+2. ~~Defense: steals, blocks, and crossovers to beat them~~ ✓
+3. ~~Layups and dunks: context finishes near the rim~~ ✓ *(this version)*
+4. **Progression:** wins, losses, total points and currency saved with DataStoreService, with retries and safe error handling *(next)*
 5. **More courts:** add entries to `Config.Courts`
 6. **Animations:** dribble, shot and dunk animations, made in the Animation Editor and uploaded by you
 7. **Cosmetics:** ball skins, outfits, court effects and emotes, unlocked with currency

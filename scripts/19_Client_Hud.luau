@@ -94,6 +94,16 @@ local function shootPrompt(): string
 	return "Hold E"
 end
 
+local function finishPrompt(): string
+	local kind = inputKind()
+	if kind == "Touch" then
+		return "drive at the rim + SHOOT to lay up or dunk"
+	elseif kind == "Gamepad" then
+		return "drive at the rim + R2 to lay up or dunk"
+	end
+	return "drive at the rim + E to lay up or dunk"
+end
+
 local function crossoverPrompt(): string
 	local kind = inputKind()
 	if kind == "Touch" then
@@ -683,7 +693,7 @@ local function refresh()
 	-- Hint
 	if playing then
 		if MatchClient.CanShootNow() then
-			hint.Text = ("%s · release in the green to shoot · %s"):format(shootPrompt(), crossoverPrompt())
+			hint.Text = ("%s to shoot · %s · %s"):format(shootPrompt(), finishPrompt(), crossoverPrompt())
 		elseif MatchClient.CanStealNow() then
 			hint.Text = "Defense · " .. defensePrompt()
 		else
@@ -692,7 +702,7 @@ local function refresh()
 	elseif queued then
 		hint.Text = ""
 	elseif MatchClient.GetHeldBall() then
-		hint.Text = ("Practice · %s · release in the green to shoot · %s"):format(shootPrompt(), crossoverPrompt())
+		hint.Text = ("Practice · %s to shoot · %s · %s"):format(shootPrompt(), finishPrompt(), crossoverPrompt())
 	elseif not anyCourtOpen() and #MatchClient.GetCourts() > 0 then
 		hint.Text = "All courts are in a match — the pads light up again when one opens"
 	else
@@ -762,13 +772,19 @@ local function onFeedback(kind: string, data: any)
 		end
 	elseif kind == "Score" then
 		local points = tonumber(data.Points) or 0
+		local shotKind = if typeof(data.Kind) == "string" then data.Kind else "Jumper"
 		if data.ShooterUserId == player.UserId then
-			local word = SCORE_WORDS[points] or "SCORE!"
+			local word = if shotKind == "Dunk" then "SLAM DUNK!" elseif shotKind == "Layup" then "LAYUP" else SCORE_WORDS[points] or "SCORE!"
+			if shotKind == "Dunk" then
+				showBanner("SLAM DUNK!", nil, THEME.Accent, 1.2)
+			end
 			if data.Practice then
 				Hud.Toast(("+%d  %s  (practice)"):format(points, word), THEME.Accent, 1.6)
 			else
 				Hud.Toast(("+%d  %s"):format(points, word), THEME.Perfect, 1.8)
 			end
+		elseif shotKind == "Dunk" then
+			showBanner("POSTERIZED!", nil, THEME.Bad, 1.2)
 		else
 			Hud.Toast(("Opponent scored +%d"):format(points), THEME.Bad, 1.6)
 		end

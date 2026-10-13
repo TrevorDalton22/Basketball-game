@@ -12,6 +12,7 @@ local EVENTS: { [string]: string } = {
 	-- client → server
 	ShootStart = "ShootStart", -- (shotNumber: number) echoed back in feedback
 	ShootRelease = "ShootRelease", -- (holdTime: number)
+	Finish = "Finish", -- (shotNumber: number) layup or dunk; the server picks which
 	LeaveQueue = "LeaveQueue", -- ()
 	LeaveMatch = "LeaveMatch", -- () forfeit the current match
 	Steal = "Steal", -- () reach for the ball carrier's ball

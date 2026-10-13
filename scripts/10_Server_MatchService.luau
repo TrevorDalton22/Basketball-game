@@ -503,7 +503,7 @@ local function onScored(ball: any, shot: any)
 	end
 	if cs.State == "Idle" then
 		if shot.Practice and shot.Shooter.Parent then
-			feedback:FireClient(shot.Shooter, "Score", { ShooterUserId = shot.Shooter.UserId, Points = shot.Points, Practice = true })
+			feedback:FireClient(shot.Shooter, "Score", { ShooterUserId = shot.Shooter.UserId, Points = shot.Points, Practice = true, Kind = shot.Kind })
 		end
 		return
 	end
@@ -526,6 +526,7 @@ local function onScored(ball: any, shot: any)
 		HomeScore = cs.Scores.Home,
 		AwayScore = cs.Scores.Away,
 		Practice = false,
+		Kind = shot.Kind,
 	})
 
 	if cs.Scores[side] >= MATCH.TargetScore then

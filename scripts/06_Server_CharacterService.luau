@@ -42,7 +42,7 @@ groundParams.FilterType = Enum.RaycastFilterType.Exclude
 groundParams.RespectCanCollide = true
 
 local function setupCollisionGroups()
-	for _, group in { GROUPS.Players, GROUPS.InMatch, GROUPS.Ball, GROUPS.BallMake, GROUPS.Hoop } do
+	for _, group in { GROUPS.Players, GROUPS.InMatch, GROUPS.Ball, GROUPS.BallMake, GROUPS.Hoop, GROUPS.Rim } do
 		if not PhysicsService:IsCollisionGroupRegistered(group) then
 			PhysicsService:RegisterCollisionGroup(group)
 		end
@@ -56,6 +56,11 @@ local function setupCollisionGroups()
 	PhysicsService:CollisionGroupSetCollidable(GROUPS.Players, GROUPS.InMatch, false)
 	-- A decided make ignores the hoop entirely
 	PhysicsService:CollisionGroupSetCollidable(GROUPS.BallMake, GROUPS.Hoop, false)
+	PhysicsService:CollisionGroupSetCollidable(GROUPS.BallMake, GROUPS.Rim, false)
+	-- Players never snag on the ring or net (dunks), but still hit the glass and pole
+	for _, body in { GROUPS.Players, GROUPS.InMatch } do
+		PhysicsService:CollisionGroupSetCollidable(body, GROUPS.Rim, false)
+	end
 end
 
 local function groupFor(player: Player): string
@@ -245,6 +250,29 @@ end
 function CharacterService.WasGroundedWithin(player: Player, seconds: number): boolean
 	local at = groundedAt[player]
 	return at ~= nil and os.clock() - at <= seconds
+end
+
+-- Horizontal velocity: the replicated physics velocity, or the movement since
+-- the last position sample, whichever is faster (velocity can lag behind)
+function CharacterService.FlatVelocity(player: Player): Vector3
+	local root = CharacterService.GetRoot(player)
+	if not root then
+		return Vector3.zero
+	end
+	local v = root.AssemblyLinearVelocity
+	local physics = Vector3.new(v.X, 0, v.Z)
+	local last = samples[player]
+	if last then
+		local elapsed = os.clock() - last.Time
+		if elapsed > 0.05 then
+			local delta = root.Position - last.Position
+			local sampled = Vector3.new(delta.X, 0, delta.Z) / elapsed
+			if sampled.Magnitude > physics.Magnitude then
+				return sampled
+			end
+		end
+	end
+	return physics
 end
 
 -- Seconds since this match player last stood on the ground (math.huge if never)

@@ -42,33 +42,10 @@ local function getRoot(): BasePart?
 	return nil
 end
 
--- Short burst of horizontal velocity on our own character (we own its physics)
 local function burst(direction: Vector3, speed: number, duration: number)
-	local root = getRoot()
-	local flat = Vector3.new(direction.X, 0, direction.Z)
-	if not root or root.Anchored or flat.Magnitude < 1e-3 then
-		return
-	end
-	flat = flat.Unit * speed
-	local attachment = Instance.new("Attachment")
-	attachment.Name = "StreetHoopsBurst"
-	attachment.Parent = root
-	local velocity = Instance.new("LinearVelocity")
-	velocity.Attachment0 = attachment
-	velocity.RelativeTo = Enum.ActuatorRelativeTo.World
-	velocity.VelocityConstraintMode = Enum.VelocityConstraintMode.Plane
-	velocity.PrimaryTangentAxis = Vector3.xAxis
-	velocity.SecondaryTangentAxis = Vector3.zAxis
-	velocity.PlaneVelocity = Vector2.new(flat.X, flat.Z)
-	velocity.MaxForce = 1e5
-	velocity.Parent = root
-	task.delay(duration, function()
-		velocity:Destroy()
-		attachment:Destroy()
-	end)
+	ShootController.Burst(direction, speed, duration)
 end
 
--- Same moments you could shoot (live match or practice), and not mid-shot
 local function canCrossover(): boolean
 	return MatchClient.CanShootNow() and not ShootController.IsHolding()
 end

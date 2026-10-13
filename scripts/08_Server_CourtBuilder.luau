@@ -373,11 +373,13 @@ local function buildHoop(folder: Instance, origin: CFrame)
 		strip(hoop, origin:PointToWorldSpace(b1), origin:PointToWorldSpace(b2), 0.06, 0.06, netColor)
 	end
 
-	-- Every solid hoop part (rim, glass, supports) shares one collision group,
-	-- so a server-decided make can pass cleanly through it
+	-- Hoop collision groups: a server-decided make passes cleanly through both.
+	-- The ring and its bracket are "Rim" (players pass through them); the glass
+	-- and supports are "Hoop". (Net strands and painted lines don't collide at all.)
 	for _, descendant in hoop:GetDescendants() do
 		if descendant:IsA("BasePart") then
-			descendant.CollisionGroup = Config.Collision.Hoop
+			local isRing = descendant.Name == "Rim" or descendant.Name == "RimBracket"
+			descendant.CollisionGroup = if isRing then Config.Collision.Rim else Config.Collision.Hoop
 		end
 	end
 end
@@ -450,6 +452,8 @@ local function buildCourt(courtsFolder: Folder, def: { Id: string, DisplayName: 
 	local model = make("Model", { Name = def.Id }, courtsFolder) :: Model
 	model:SetAttribute("CourtId", def.Id)
 	model:SetAttribute("DisplayName", def.DisplayName)
+	-- Clients use this to know when they're driving at the rim (layups/dunks)
+	model:SetAttribute("RimCenter", BasketballMath.RimCenter(origin))
 	local static = make("Folder", { Name = "Static" }, model) :: Folder
 
 	-- Floor: runoff slab, playing surface and painted key

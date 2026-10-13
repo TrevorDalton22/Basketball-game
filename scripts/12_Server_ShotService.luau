@@ -1,8 +1,10 @@
 --!strict
 -- ShotService (ModuleScript) — ServerScriptService > Server > ShotService
--- Handles shot requests. The client only says "I started holding shoot" and
--- "I let go after N seconds". The server checks possession and match state,
--- measures the hold itself, decides make or miss, and launches the ball.
+-- Handles shot requests. For a jump shot the client only says "I started
+-- holding shoot" and "I let go after N seconds"; for a layup/dunk it says
+-- "finish". The server checks possession and match state, measures the hold
+-- itself, picks layup vs dunk from its own view of the drive, decides make or
+-- miss, and launches the ball.
 
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
@@ -22,13 +24,15 @@ local ShotService = {}
 
 local SHOT = Config.Shot
 local DEFENSE = Config.Defense
+local FINISH = Config.Finish
 local MAX_HOLD_TIME = SHOT.FillTime * SHOT.MaxHoldFraction
 
 -- Token: server-side id for the auto-release timer
 -- ClientToken: the client's shot number, echoed back so it can match replies
 -- DefenderGrounded: the defender was on the ground when the shot began (only
 -- then can they block it: you have to react to the shot, not pogo-jump)
-type Pending = { Ball: any, StartedAt: number, Token: number, ClientToken: number, DefenderGrounded: boolean }
+-- Kind: "Jumper" (resolved by ShootRelease) or "Layup"/"Dunk" (resolved on a timer)
+type Pending = { Ball: any, StartedAt: number, Token: number, ClientToken: number, DefenderGrounded: boolean, Kind: string }
 
 local pending: { [Player]: Pending } = {}
 local lastShotAt: { [Player]: number } = {}
@@ -137,7 +141,7 @@ local function aimPoint(rim: Vector3, toRim: Vector3, boardDir: Vector3, made: b
 end
 
 -- Is `defender` in the air between the shooter and the rim, close enough to block?
-local function isBlocked(defender: Player, shooterPos: Vector3, toRim: Vector3, origin: CFrame): boolean
+local function isBlocked(defender: Player, shooterPos: Vector3, toRim: Vector3, origin: CFrame, chanceScale: number?): boolean
 	local root = CharacterService.GetRoot(defender)
 	local humanoid = CharacterService.GetHumanoid(defender)
 	if not root or not humanoid or not CharacterService.IsMoveLegit(defender) then
@@ -162,7 +166,7 @@ local function isBlocked(defender: Player, shooterPos: Vector3, toRim: Vector3, 
 	if rise < DEFENSE.BlockMinRise or rise > Config.Movement.JumpHeight + 0.5 then
 		return false
 	end
-	return rng:NextNumber() < DEFENSE.BlockChance
+	return rng:NextNumber() < DEFENSE.BlockChance * (chanceScale or 1)
 end
 
 -- Where shots are never allowed: out of bounds (in a match) and behind/beside the glass
@@ -257,10 +261,184 @@ local function resolveShot(player: Player, entry: Pending, clientHold: number?)
 		MatchId = context.MatchId,
 		Practice = context.Practice == true,
 		Made = made,
+		Kind = "Jumper",
 	}
 	if BallService.Launch(ball, from, velocity, shot) then
 		feedback:FireClient(player, "Release", { Quality = quality, Fraction = fraction, Points = points, Token = entry.ClientToken })
 	end
+end
+
+--------------------------------------------------------------------------------
+-- Layups and dunks
+--------------------------------------------------------------------------------
+
+-- Which finish the player is in position for, judged from the server's own
+-- view of their distance and speed toward the rim (nil = not driving)
+local function finishKindFor(player: Player, origin: CFrame, rim: Vector3, root: BasePart): string?
+	local distance = BasketballMath.DistanceToRim(origin, root.Position)
+	local toRim = flatUnit(rim - root.Position, origin:VectorToWorldSpace(Vector3.new(0, 0, -1)))
+	local approach = CharacterService.FlatVelocity(player):Dot(toRim)
+	if distance <= FINISH.DunkRange and approach >= FINISH.DunkMinApproach then
+		return "Dunk"
+	elseif distance <= FINISH.LayupRange and approach >= FINISH.LayupMinApproach then
+		return "Layup"
+	end
+	return nil
+end
+
+local function finishChance(kind: string, shooterPos: Vector3, toRim: Vector3, defender: Player?): number
+	local chance = if kind == "Dunk" then FINISH.DunkMakeChance else FINISH.LayupMakeChance
+	if defender then
+		local defenderRoot = CharacterService.GetRoot(defender)
+		if defenderRoot then
+			local offset = defenderRoot.Position - shooterPos
+			local flat = Vector3.new(offset.X, 0, offset.Z)
+			local gap = flat.Magnitude
+			if gap < SHOT.ContestRadius and gap > 1e-3 and flat.Unit:Dot(toRim) > 0.2 then
+				local closeness = 1 - gap / SHOT.ContestRadius
+				chance *= 1 - SHOT.ContestMaxPenalty * FINISH.ContestScale * closeness
+			end
+		end
+	end
+	return math.clamp(chance, 0.01, 0.99)
+end
+
+local function resolveFinish(player: Player, entry: Pending)
+	local ball = entry.Ball
+	if ball.State ~= "Held" or ball.Holder ~= player then
+		return -- stripped before the finish
+	end
+	local context = MatchService.GetShotContext(ball, player)
+	local root = CharacterService.GetRoot(player)
+	local court = ball.Court
+	local origin: CFrame = court.Origin
+	local function reject()
+		ball.Part:SetAttribute("Shooting", false)
+		ball.Part:SetAttribute("Finish", "")
+		feedback:FireClient(player, "ShotRejected", { Reason = "", Token = entry.ClientToken })
+		lastShotAt[player] = os.clock() + DEFENSE.StealCooldown
+	end
+	if not context or not root or CharacterService.IsSuspicious(player) then
+		reject()
+		return
+	end
+	if shotSpotProblem(origin, root.Position, context.Practice) then
+		reject()
+		return
+	end
+
+	local kind = entry.Kind
+	local rim: Vector3 = court.RimCenter
+	local shooterPos = root.Position
+	local toRim = flatUnit(rim - shooterPos, origin:VectorToWorldSpace(Vector3.new(0, 0, -1)))
+	local side = toRim:Cross(Vector3.yAxis)
+	local points = if kind == "Dunk" then Config.Scoring.Dunk else Config.Scoring.Layup
+	ball.Part:SetAttribute("Finish", "")
+
+	-- Blocked? Same rules as a jump shot, but dunks are much harder to stop
+	local blockScale = if kind == "Dunk" then FINISH.DunkBlockFactor else 1
+	if context.Defender and entry.DefenderGrounded and isBlocked(context.Defender, shooterPos, toRim, origin, blockScale) then
+		local from = shooterPos + Vector3.new(0, SHOT.ReleaseHeight, 0) + toRim * SHOT.ReleaseForward
+		local deflect = -toRim * rng:NextNumber(9, 15) + side * rng:NextNumber(-7, 7) + Vector3.new(0, rng:NextNumber(6, 11), 0)
+		ball.Part:SetAttribute("Shooting", false)
+		if BallService.Knock(ball, from, deflect, context.Defender, DEFENSE.BlockedRegrabDelay, DEFENSE.BlockerGrabDelay) then
+			local data = { BlockerUserId = context.Defender.UserId, ShooterUserId = player.UserId, Kind = kind }
+			feedback:FireClient(player, "Block", data)
+			feedback:FireClient(context.Defender, "Block", data)
+		end
+		return
+	end
+
+	local made = rng:NextNumber() < finishChance(kind, shooterPos, toRim, context.Defender)
+	local from: Vector3
+	local velocity: Vector3
+	if kind == "Dunk" then
+		if made then
+			-- Slammed straight down through the ring
+			from = rim + Vector3.new(0, 1.4, 0) - toRim * 0.2
+			velocity = Vector3.new(0, -32, 0) + toRim * 1.5
+		else
+			-- Clanged off the front of the rim
+			from = rim + Vector3.new(0, 1.3, 0) - toRim * (Config.Court.RimRadius + Config.Ball.Radius + 0.3)
+			velocity = -toRim * rng:NextNumber(8, 12) + side * rng:NextNumber(-5, 5) + Vector3.new(0, rng:NextNumber(9, 13), 0)
+		end
+	else
+		from = shooterPos + Vector3.new(0, SHOT.ReleaseHeight + 0.6, 0) + toRim * 1.2
+		local distance = BasketballMath.DistanceToRim(origin, shooterPos)
+		local boardDir = origin:VectorToWorldSpace(Vector3.new(0, 0, -1))
+		local target = aimPoint(rim, toRim, boardDir, made, "Good", SHOT.IdealFraction, distance)
+		velocity = BasketballMath.SolveArc(from, target, rim.Y + FINISH.LayupArc, Config.Ball.Gravity)
+	end
+
+	local shot = {
+		Id = BallService.NewShotId(),
+		Shooter = player,
+		Points = points,
+		Quality = kind,
+		MatchId = context.MatchId,
+		Practice = context.Practice == true,
+		Made = made,
+		Kind = kind,
+	}
+	BallService.Launch(ball, from, velocity, shot)
+end
+
+local function onFinish(player: Player, clientToken: any)
+	if not RemoteGuard.Allow(player) then
+		return
+	end
+	local shotNumber: number = if RemoteGuard.IsNumber(clientToken, 0, 1e9) then clientToken else 0
+	local function refuse()
+		feedback:FireClient(player, "ShotRejected", { Reason = "", Token = shotNumber })
+	end
+	if pending[player] then
+		refuse()
+		return
+	end
+	local now = os.clock()
+	local last = lastShotAt[player]
+	if last and now - last < SHOT.MinShotInterval then
+		refuse()
+		return
+	end
+	local ball = BallService.FindHeldBy(player)
+	local context = ball and MatchService.GetShotContext(ball, player)
+	local root = CharacterService.GetRoot(player)
+	if not ball or not context or not root or not CharacterService.IsMoveLegit(player) then
+		refuse()
+		return
+	end
+	local court = ball.Court
+	if shotSpotProblem(court.Origin, root.Position, context.Practice) then
+		refuse()
+		return
+	end
+	local kind = finishKindFor(player, court.Origin, court.RimCenter, root)
+	if not kind then
+		refuse() -- not actually driving at the rim
+		return
+	end
+
+	local defender = context.Defender
+	local defenderGrounded = defender ~= nil and CharacterService.WasGroundedWithin(defender, DEFENSE.DefenderGroundedAtShot)
+	tokenCounter += 1
+	local token = tokenCounter
+	local entry: Pending = { Ball = ball, StartedAt = now, Token = token, ClientToken = shotNumber, DefenderGrounded = defenderGrounded, Kind = kind }
+	pending[player] = entry
+	lastShotAt[player] = now
+	ball.Part:SetAttribute("Shooting", true)
+	ball.Part:SetAttribute("Finish", kind)
+	feedback:FireClient(player, "Finish", { Kind = kind, Token = shotNumber })
+	if defender and defender.Parent then
+		feedback:FireClient(defender, "Finish", { Kind = kind, Token = 0 })
+	end
+
+	task.delay(if kind == "Dunk" then FINISH.DunkTime else FINISH.LayupTime, function()
+		if pending[player] == entry then
+			pending[player] = nil
+			resolveFinish(player, entry)
+		end
+	end)
 end
 
 local function onShootStart(player: Player, clientToken: any)
@@ -299,7 +477,7 @@ local function onShootStart(player: Player, clientToken: any)
 	local defenderGrounded = defender ~= nil and CharacterService.WasGroundedWithin(defender, DEFENSE.DefenderGroundedAtShot)
 	tokenCounter += 1
 	local token = tokenCounter
-	pending[player] = { Ball = ball, StartedAt = now, Token = token, ClientToken = shotNumber, DefenderGrounded = defenderGrounded }
+	pending[player] = { Ball = ball, StartedAt = now, Token = token, ClientToken = shotNumber, DefenderGrounded = defenderGrounded, Kind = "Jumper" }
 	lastShotAt[player] = now
 	ball.Part:SetAttribute("Shooting", true)
 
@@ -318,8 +496,8 @@ local function onShootRelease(player: Player, holdTime: any)
 		return
 	end
 	local entry = pending[player]
-	if not entry then
-		return
+	if not entry or entry.Kind ~= "Jumper" then
+		return -- nothing held (a layup/dunk resolves on its own timer)
 	end
 	pending[player] = nil
 	local clientHold: number? = if RemoteGuard.IsNumber(holdTime, 0, 10) then holdTime else nil
@@ -330,6 +508,7 @@ function ShotService.Init()
 	feedback = Net.Event("Feedback")
 	Net.Event("ShootStart").OnServerEvent:Connect(onShootStart)
 	Net.Event("ShootRelease").OnServerEvent:Connect(onShootRelease)
+	Net.Event("Finish").OnServerEvent:Connect(onFinish)
 	Players.PlayerRemoving:Connect(function(player)
 		pending[player] = nil
 		lastShotAt[player] = nil

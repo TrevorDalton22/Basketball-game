@@ -59,8 +59,10 @@ Config.Ball = {
 
 	-- Where the ball sits relative to the HumanoidRootPart while held
 	HoldOffset = CFrame.new(1.05, -0.6, -1.35),
-	-- Cosmetic only (client): ball raised for the shot
+	-- Cosmetic only (client): ball raised for the shot, layup and dunk
 	ShootPoseOffset = CFrame.new(0.35, 2.3, -0.7),
+	LayupPoseOffset = CFrame.new(0.6, 2.6, -1.4),
+	DunkPoseOffset = CFrame.new(0, 3.4, -1.6),
 	-- Cosmetic only (client): dribble bounce while moving
 	DribbleFloorOffset = -2.3, -- relative to HRP, roughly the floor
 	DribbleRate = 2.4, -- bounces per second at full run
@@ -118,6 +120,29 @@ Config.Shot = {
 Config.Scoring = {
 	InsideArc = 2,
 	OutsideArc = 3,
+	Layup = 2,
+	Dunk = 2,
+}
+
+-- Layups and dunks: drive at the rim and press shoot (no meter)
+Config.Finish = {
+	LayupRange = 11, -- flat distance to the rim centre
+	DunkRange = 7,
+	LayupMinApproach = 5, -- speed toward the rim (studs/s) that counts as driving
+	DunkMinApproach = 12,
+	LayupTime = 0.3, -- seconds from the press to the ball leaving the hands
+	DunkTime = 0.34,
+	LayupMakeChance = 0.82,
+	DunkMakeChance = 0.96,
+	ContestScale = 0.6, -- a defender's contest hurts finishes this much as much as jump shots
+	DunkBlockFactor = 0.4, -- dunks are much harder to block (multiplies Defense.BlockChance)
+	LayupArc = 2.6, -- apex height above the rim for a layup
+	-- Client leap (cosmetic, the server decides the result)
+	DunkLeapTime = 0.3, -- time to carry the dunker to just in front of the rim
+	DunkLeapMaxSpeed = 30,
+	DunkStopShort = 1.8, -- stop this far in front of the rim centre
+	LayupHopSpeed = 10,
+	LayupHopTime = 0.2,
 }
 
 Config.Match = {
@@ -208,7 +233,8 @@ Config.Collision = {
 	-- ignores the hoop (rim, backboard, supports), so physics can never turn a
 	-- decided make into a miss.
 	BallMake = "BallMake",
-	Hoop = "Hoop",
+	Hoop = "Hoop", -- backboard and supports
+	Rim = "Rim", -- the ring and net: players pass through it (no snagging on dunks)
 }
 
 Config.Remote = {

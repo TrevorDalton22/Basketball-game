@@ -32,6 +32,7 @@ export type ShotRecord = {
 	MatchId: number?, -- nil for practice shots
 	Practice: boolean,
 	Made: boolean, -- decided by ShotService at release; never sent to clients
+	Kind: string, -- "Jumper" | "Layup" | "Dunk"
 }
 
 export type Ball = {
@@ -90,6 +91,7 @@ local function setHolder(ball: Ball, player: Player?)
 	ball.Part:SetAttribute("Shooting", false)
 	-- Which hand the ball is in (crossovers switch it; client visuals mirror it)
 	ball.Part:SetAttribute("Hand", "Right")
+	ball.Part:SetAttribute("Finish", "") -- "Layup"/"Dunk" while one is under way
 end
 
 local function updateAntiGravity(ball: Ball)
@@ -193,7 +195,8 @@ function BallService.Create(court: any): Ball
 		TouchedRim = false,
 	}
 	part.Touched:Connect(function(hit)
-		if hit.CollisionGroup ~= Config.Collision.Hoop or (ball.State ~= "InFlight" and ball.State ~= "Loose") then
+		local group = hit.CollisionGroup
+		if (group ~= Config.Collision.Hoop and group ~= Config.Collision.Rim) or (ball.State ~= "InFlight" and ball.State ~= "Loose") then
 			return
 		end
 		-- Bumping the hoop from underneath on the way up can never be part of a

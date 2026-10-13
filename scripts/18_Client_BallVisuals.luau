@@ -149,8 +149,15 @@ local function updateVisual(v: Visual, dt: number)
 
 	local target: CFrame
 	if ball:GetAttribute("Shooting") == true then
-		local pose = BALL.ShootPoseOffset
-		target = CFrame.new(pose.X * v.HandSide, pose.Y, pose.Z)
+		local finish = ball:GetAttribute("Finish")
+		if finish == "Dunk" then
+			target = BALL.DunkPoseOffset -- cocked high, out in front
+		elseif finish == "Layup" then
+			target = BALL.LayupPoseOffset
+		else
+			local pose = BALL.ShootPoseOffset
+			target = CFrame.new(pose.X * v.HandSide, pose.Y, pose.Z)
+		end
 	else
 		local velocity = root.AssemblyLinearVelocity
 		local speed = Vector3.new(velocity.X, 0, velocity.Z).Magnitude
