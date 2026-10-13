@@ -1,37 +1,282 @@
 --!strict
 -- Main (Script) — ServerScriptService > Server > Main
--- Server entry point: builds the world, starts every service in order, and
--- runs the single Heartbeat loop that drives them.
+-- Server entry point. First checks that every script from the README is in
+-- the right place with the right type (and says exactly what to fix if not),
+-- then builds the world, starts every service in order, and runs the single
+-- Heartbeat loop that drives them.
 
+local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local RunService = game:GetService("RunService")
 
+local TAG = "[Street Hoops]"
+
+--------------------------------------------------------------------------------
+-- 1. Setup check: every script the README creates, where it must live
+--------------------------------------------------------------------------------
+
+type Expected = { Path: { string }, Class: string, File: string? }
+
+local EXPECTED: { Expected } = {
+	{ Path = { "ReplicatedStorage", "Shared" }, Class = "Folder" },
+	{ Path = { "ReplicatedStorage", "Shared", "Config" }, Class = "ModuleScript", File = "01_Shared_Config" },
+	{ Path = { "ReplicatedStorage", "Shared", "Signal" }, Class = "ModuleScript", File = "02_Shared_Signal" },
+	{ Path = { "ReplicatedStorage", "Shared", "Net" }, Class = "ModuleScript", File = "03_Shared_Net" },
+	{ Path = { "ReplicatedStorage", "Shared", "BasketballMath" }, Class = "ModuleScript", File = "04_Shared_BasketballMath" },
+	{ Path = { "ServerScriptService", "Server" }, Class = "Folder" },
+	{ Path = { "ServerScriptService", "Server", "Main" }, Class = "Script", File = "05_Server_Main" },
+	{ Path = { "ServerScriptService", "Server", "CharacterService" }, Class = "ModuleScript", File = "06_Server_CharacterService" },
+	{ Path = { "ServerScriptService", "Server", "RemoteGuard" }, Class = "ModuleScript", File = "07_Server_RemoteGuard" },
+	{ Path = { "ServerScriptService", "Server", "CourtBuilder" }, Class = "ModuleScript", File = "08_Server_CourtBuilder" },
+	{ Path = { "ServerScriptService", "Server", "BallService" }, Class = "ModuleScript", File = "09_Server_BallService" },
+	{ Path = { "ServerScriptService", "Server", "MatchService" }, Class = "ModuleScript", File = "10_Server_MatchService" },
+	{ Path = { "ServerScriptService", "Server", "QueueService" }, Class = "ModuleScript", File = "11_Server_QueueService" },
+	{ Path = { "ServerScriptService", "Server", "ShotService" }, Class = "ModuleScript", File = "12_Server_ShotService" },
+	{ Path = { "StarterPlayer", "StarterPlayerScripts", "ClientMain" }, Class = "LocalScript", File = "13_Client_ClientMain" },
+	{ Path = { "StarterPlayer", "StarterPlayerScripts", "ClientMain", "UIKit" }, Class = "ModuleScript", File = "14_Client_UIKit" },
+	{ Path = { "StarterPlayer", "StarterPlayerScripts", "ClientMain", "MatchClient" }, Class = "ModuleScript", File = "15_Client_MatchClient" },
+	{ Path = { "StarterPlayer", "StarterPlayerScripts", "ClientMain", "ShotMeter" }, Class = "ModuleScript", File = "16_Client_ShotMeter" },
+	{ Path = { "StarterPlayer", "StarterPlayerScripts", "ClientMain", "ShootController" }, Class = "ModuleScript", File = "17_Client_ShootController" },
+	{ Path = { "StarterPlayer", "StarterPlayerScripts", "ClientMain", "BallVisuals" }, Class = "ModuleScript", File = "18_Client_BallVisuals" },
+	{ Path = { "StarterPlayer", "StarterPlayerScripts", "ClientMain", "Hud" }, Class = "ModuleScript", File = "19_Client_Hud" },
+}
+
+local SEARCH_ROOTS = { "Workspace", "ReplicatedStorage", "ReplicatedFirst", "ServerScriptService", "ServerStorage", "StarterPlayer", "StarterGui", "StarterPack", "Lighting" }
+
+local function pathText(path: { string }): string
+	return table.concat(path, " > ")
+end
+
+local function resolve(path: { string }): Instance?
+	local current: Instance? = game:GetService(path[1] :: any)
+	for i = 2, #path do
+		if not current then
+			return nil
+		end
+		current = current:FindFirstChild(path[i])
+	end
+	return current
+end
+
+-- Find objects with this name elsewhere (any capitalisation), to say where it went
+local function findElsewhere(name: string): { Instance }
+	local found = {}
+	local lower = name:lower()
+	for _, rootName in SEARCH_ROOTS do
+		local ok, root = pcall(function()
+			return game:GetService(rootName :: any)
+		end)
+		if ok and root then
+			for _, descendant in root:GetDescendants() do
+				if descendant.Name:lower() == lower and (descendant:IsA("LuaSourceContainer") or descendant:IsA("Folder")) then
+					table.insert(found, descendant)
+				end
+			end
+		end
+	end
+	return found
+end
+
+local function checkSetup(): { string }
+	local problems = {}
+	for _, item in EXPECTED do
+		local name = item.Path[#item.Path]
+		local instance = resolve(item.Path)
+		local fileHint = if item.File then (" (paste scripts/%s.luau)"):format(item.File) else ""
+		if not instance then
+			local elsewhere = findElsewhere(name)
+			if #elsewhere > 0 then
+				local spots = {}
+				for _, other in elsewhere do
+					table.insert(spots, ("%s [%s]"):format(other:GetFullName(), other.ClassName))
+				end
+				table.insert(problems, ("%s is not where it should be. Found: %s. Move it to %s and check the spelling/capitals."):format(name, table.concat(spots, ", "), pathText(item.Path)))
+			else
+				table.insert(problems, ("Missing %s '%s' at %s%s."):format(item.Class, name, pathText(item.Path), fileHint))
+			end
+		elseif instance.ClassName ~= item.Class then
+			table.insert(problems, ("%s is a %s but must be a %s. Delete it, insert a %s with the same name in the same place, and paste the code again%s."):format(pathText(item.Path), instance.ClassName, item.Class, item.Class, fileHint))
+		end
+	end
+	return problems
+end
+
+--------------------------------------------------------------------------------
+-- 2. Safety floor: if anything goes wrong, players stand on something and see
+--    a sign instead of falling forever
+--------------------------------------------------------------------------------
+
+local function buildSafetyFloor(message: string)
+	if workspace:FindFirstChild("StreetHoopsSafetyFloor") then
+		return
+	end
+	local folder = Instance.new("Folder")
+	folder.Name = "StreetHoopsSafetyFloor"
+	local floor = Instance.new("Part")
+	floor.Name = "Floor"
+	floor.Anchored = true
+	floor.Size = Vector3.new(200, 2, 200)
+	floor.CFrame = CFrame.new(0, -1, 0)
+	floor.Color = Color3.fromRGB(90, 90, 96)
+	floor.Material = Enum.Material.Concrete
+	floor.Parent = folder
+	local spawn = Instance.new("SpawnLocation")
+	spawn.Name = "SafetySpawn"
+	spawn.Anchored = true
+	spawn.Size = Vector3.new(8, 1, 8)
+	spawn.CFrame = CFrame.new(0, 0.5, 0)
+	spawn.Neutral = true
+	spawn.Duration = 0
+	spawn.Parent = folder
+	local board = Instance.new("Part")
+	board.Name = "SetupProblemSign"
+	board.Anchored = true
+	board.Size = Vector3.new(24, 9, 0.5)
+	board.CFrame = CFrame.lookAt(Vector3.new(0, 6, -14), Vector3.new(0, 6, 0))
+	board.Color = Color3.fromRGB(20, 22, 30)
+	board.Parent = folder
+	local gui = Instance.new("SurfaceGui")
+	gui.Face = Enum.NormalId.Front
+	gui.Parent = board
+	local label = Instance.new("TextLabel")
+	label.Size = UDim2.fromScale(1, 1)
+	label.BackgroundTransparency = 1
+	label.TextColor3 = Color3.fromRGB(255, 120, 120)
+	label.TextScaled = true
+	label.Font = Enum.Font.GothamBold
+	label.Text = "STREET HOOPS SETUP PROBLEM\n" .. message .. "\nOpen View > Output for details"
+	label.Parent = gui
+	folder.Parent = workspace
+end
+
+-- Players who spawned before the map existed (and are falling) get respawned
+-- onto it. With `everyone`, every spawned character is moved to the new spawn.
+local function respawnFallenPlayers(everyone: boolean)
+	for _, player in Players:GetPlayers() do
+		local character = player.Character
+		if not character then
+			continue -- not spawned yet: they will spawn on the new SpawnLocation
+		end
+		local root = character:FindFirstChild("HumanoidRootPart")
+		local falling = not root or not root:IsA("BasePart") or root.Position.Y < -5
+		if everyone or falling then
+			task.spawn(function()
+				player:LoadCharacter()
+			end)
+		end
+	end
+end
+
+local function fail(summary: string, details: { string })
+	warn(("%s ✗ %s"):format(TAG, summary))
+	for i, line in details do
+		warn(("%s   %d. %s"):format(TAG, i, line))
+	end
+	warn(("%s Fix the items above, then press Play again. (README → Step 4 has the full tree.)"):format(TAG))
+	buildSafetyFloor(summary)
+	respawnFallenPlayers(true)
+end
+
+--------------------------------------------------------------------------------
+-- 3. Start-up
+--------------------------------------------------------------------------------
+
+local problems = checkSetup()
+if #problems > 0 then
+	fail(("%d setup problem(s) found"):format(#problems), problems)
+	return
+end
+print(("%s ✓ All 19 scripts found in the right places"):format(TAG))
+
 local Shared = ReplicatedStorage:WaitForChild("Shared")
-local Net = require(Shared:WaitForChild("Net"))
-
 local Server = script.Parent
-local CharacterService = require(Server:WaitForChild("CharacterService"))
-local CourtBuilder = require(Server:WaitForChild("CourtBuilder"))
-local BallService = require(Server:WaitForChild("BallService"))
-local MatchService = require(Server:WaitForChild("MatchService"))
-local QueueService = require(Server:WaitForChild("QueueService"))
-local ShotService = require(Server:WaitForChild("ShotService"))
 
--- Remotes must exist before any client script asks for them
-Net.CreateAll()
-CharacterService.Init()
+local loaded: { [string]: any } = {}
+local function load(parent: Instance, name: string): boolean
+	local module = parent:FindFirstChild(name)
+	-- (dynamic require: the module was located by the setup check above)
+	local requireModule: any = require
+	local ok, result = pcall(function()
+		return requireModule(module)
+	end)
+	if not ok then
+		fail(("%s failed to load"):format(name), {
+			tostring(result),
+			("Re-copy the code for %s from GitHub and paste it again (Ctrl+A, then Ctrl+V)."):format(name),
+		})
+		return false
+	end
+	loaded[name] = result
+	return true
+end
 
-local courts = CourtBuilder.Build()
-MatchService.Init(courts)
-QueueService.Init()
-ShotService.Init()
+for _, name in { "Config", "Signal", "Net", "BasketballMath" } do
+	if not load(Shared, name) then
+		return
+	end
+end
+for _, name in { "CharacterService", "RemoteGuard", "CourtBuilder", "BallService", "MatchService", "QueueService", "ShotService" } do
+	if not load(Server, name) then
+		return
+	end
+end
+
+local Net = loaded.Net
+local CharacterService = loaded.CharacterService
+local CourtBuilder = loaded.CourtBuilder
+local BallService = loaded.BallService
+local MatchService = loaded.MatchService
+local QueueService = loaded.QueueService
+local ShotService = loaded.ShotService
+
+local courts: { any } = {}
+local function startStep(name: string, fn: () -> ()): boolean
+	local ok, err = pcall(function()
+		fn()
+	end)
+	if not ok then
+		fail(("Start-up step '%s' failed"):format(name), { tostring(err) })
+		return false
+	end
+	return true
+end
+
+local steps: { { Name: string, Run: () -> () } } = {
+	-- Remotes must exist before any client script asks for them
+	{ Name = "Create remotes", Run = function()
+		Net.CreateAll()
+	end },
+	{ Name = "Characters", Run = function()
+		CharacterService.Init()
+	end },
+	{ Name = "Build the park and courts", Run = function()
+		courts = CourtBuilder.Build()
+	end },
+	{ Name = "Matches", Run = function()
+		MatchService.Init(courts)
+	end },
+	{ Name = "Queues", Run = function()
+		QueueService.Init()
+	end },
+	{ Name = "Shooting", Run = function()
+		ShotService.Init()
+	end },
+}
+for _, entry in steps do
+	if not startStep(entry.Name, entry.Run) then
+		return
+	end
+end
+
+-- Anyone who spawned before the map finished building lands on it now
+respawnFallenPlayers(false)
 
 local function step(name: string, fn: (number) -> (), dt: number)
 	local ok, err = pcall(function()
 		fn(dt)
 	end)
 	if not ok then
-		warn(("[Main] %s.Update error: %s"):format(name, tostring(err)))
+		warn(("%s %s.Update error: %s"):format(TAG, name, tostring(err)))
 	end
 end
 
@@ -42,4 +287,4 @@ RunService.Heartbeat:Connect(function(dt)
 	step("QueueService", QueueService.Update, dt)
 end)
 
-print(("[Main] Street Hoops server ready — %d court(s)"):format(#courts))
+print(("%s ✓ Server ready — %d court(s)"):format(TAG, #courts))

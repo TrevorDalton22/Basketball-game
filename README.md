@@ -211,12 +211,22 @@ Every gameplay number is in **ReplicatedStorage › Shared › Config**. The mos
 
 ## Troubleshooting
 
+**First, read the Output window** (View → Output) right after you press Play. When the server starts, `Main` checks that all 19 scripts are in the right places, then prints one of these:
+
+- `[Street Hoops] ✓ All 19 scripts found…` followed by `✓ Server ready`: everything loaded.
+- `[Street Hoops] ✗ … setup problem(s) found`, followed by a numbered list. Each line says exactly what's wrong, for example *"Config is not where it should be. Found: Workspace.Config. Move it to ReplicatedStorage > Shared > Config"*. A grey floor and a red **SETUP PROBLEM** sign also appear in the game, so you don't fall forever. Fix each item and press Play again.
+- **No `[Street Hoops]` lines at all** means `Main` itself isn't running. Check that:
+  1. `Main` is a **Script**. Its Explorer icon is a page with a blue arrow. A LocalScript (person icon) or a ModuleScript doesn't run on the server.
+  2. It's inside **ServerScriptService** (in the `Server` folder).
+  3. Its **Enabled** box is ticked in Properties.
+  4. You pasted the code from `scripts/05_Server_Main.luau` into it.
+
 | You see | Fix |
 |---|---|
-| `Infinite yield possible on ... WaitForChild("Config")` (or another name) | A script or folder is missing or misspelled. Compare with the tree in Step 4. |
-| `Requested module experienced an error while loading` | Code was pasted into the wrong script. Check line 2 of each script. |
-| No court appears when you press Play | `Main` isn't a **Script**, or it isn't inside `ServerScriptService › Server`. |
-| No HUD or meter | `ClientMain` isn't a **LocalScript**, or modules 14–19 aren't its direct children. |
+| You fall forever and there's no map | `Main` isn't running. See the four checks above. |
+| A **SETUP PROBLEM** sign on a grey floor | Read the numbered `[Street Hoops]` lines in Output and fix each one. |
+| `… failed to load` with an error message | That script's code is incomplete or pasted into the wrong script. Copy it again from GitHub (Ctrl+A in Studio, then Ctrl+V). |
+| No HUD or meter (but the map is there) | `ClientMain` isn't a **LocalScript**, it's disabled, or modules 14–19 aren't its direct children. |
 | Warning about `Baseplate` / `SpawnLocation` | Delete them (Step 2). |
 
 If you see a red error, copy it from the Output window and send it to me, including the script name and line number.
