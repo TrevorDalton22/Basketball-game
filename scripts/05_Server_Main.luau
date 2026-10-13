@@ -11,6 +11,12 @@ local RunService = game:GetService("RunService")
 
 local TAG = "[Street Hoops]"
 
+-- Pasted into the wrong script? Say so instead of misbehaving.
+if RunService:IsClient() then
+	warn(("%s ✗ %s contains the server Main code (scripts/05_Server_Main.luau). It belongs in the Script at ServerScriptService > Server > Main; this LocalScript needs scripts/13_Client_ClientMain.luau."):format(TAG, script:GetFullName()))
+	return
+end
+
 --------------------------------------------------------------------------------
 -- 1. Setup check: every script the README creates, where it must live
 --------------------------------------------------------------------------------

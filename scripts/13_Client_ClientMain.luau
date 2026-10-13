@@ -3,6 +3,12 @@
 -- Client entry point. Its children are the client modules; this script only
 -- starts them in the right order.
 
+-- Pasted into the wrong script? Say so instead of waiting forever.
+if game:GetService("RunService"):IsServer() then
+	warn(("[Street Hoops] ✗ %s contains the ClientMain code (scripts/13_Client_ClientMain.luau). Paste that code into the ClientMain LocalScript, and put scripts/05_Server_Main.luau in ServerScriptService > Server > Main."):format(script:GetFullName()))
+	return
+end
+
 local Client = script
 
 local MatchClient = require(Client:WaitForChild("MatchClient"))
