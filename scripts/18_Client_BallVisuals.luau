@@ -16,6 +16,7 @@ local UIKit = require(Client:WaitForChild("UIKit"))
 local MatchClient = require(Client:WaitForChild("MatchClient"))
 
 local BallVisuals = {}
+BallVisuals.ScriptVersion = 2 -- Main/ClientMain compare this to spot an old copy; bump when this file changes
 
 local BALL = Config.Ball
 local localPlayer = Players.LocalPlayer

@@ -19,6 +19,7 @@ local MatchClient = require(Client:WaitForChild("MatchClient"))
 local ShootController = require(Client:WaitForChild("ShootController"))
 
 local MovesController = {}
+MovesController.ScriptVersion = 2 -- Main/ClientMain compare this to spot an old copy; bump when this file changes
 
 local MOVES = Config.Moves
 local DEFENSE = Config.Defense

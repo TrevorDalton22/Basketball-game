@@ -21,6 +21,7 @@ local MatchService = require(Server:WaitForChild("MatchService"))
 local RemoteGuard = require(Server:WaitForChild("RemoteGuard"))
 
 local ShotService = {}
+ShotService.ScriptVersion = 2 -- Main/ClientMain compare this to spot an old copy; bump when this file changes
 
 local SHOT = Config.Shot
 local DEFENSE = Config.Defense
@@ -194,10 +195,11 @@ local function resolveShot(player: Player, entry: Pending, clientHold: number?)
 	local origin: CFrame = court.Origin
 	local function reject(reason: string)
 		ball.Part:SetAttribute("Shooting", false)
-		feedback:FireClient(player, "ShotRejected", { Reason = reason, Token = entry.ClientToken })
 		-- A refused shot leaves the ball in hand: open a real steal window before
-		-- the next one, so refused shots can't be chained into a steal-proof shield
+		-- the next one, so refused shots can't be chained into a steal-proof shield.
+		-- RetryIn lets the client hold off instead of flashing a meter that is refused.
 		lastShotAt[player] = os.clock() + DEFENSE.StealCooldown
+		feedback:FireClient(player, "ShotRejected", { Reason = reason, Token = entry.ClientToken, RetryIn = DEFENSE.StealCooldown + SHOT.MinShotInterval })
 	end
 	if not context or not root then
 		reject("")
@@ -329,10 +331,12 @@ local function resolveFinish(player: Player, entry: Pending)
 	local function reject(reason: string, lockout: boolean)
 		ball.Part:SetAttribute("Shooting", false)
 		ball.Part:SetAttribute("Finish", "")
-		feedback:FireClient(player, "ShotRejected", { Reason = reason, Token = entry.ClientToken })
+		-- Same steal window as a refused jump shot (see resolveShot)
 		if lockout then
 			lastShotAt[player] = os.clock() + DEFENSE.StealCooldown
 		end
+		local retryIn = if lockout then DEFENSE.StealCooldown + SHOT.MinShotInterval else 0
+		feedback:FireClient(player, "ShotRejected", { Reason = reason, Token = entry.ClientToken, RetryIn = retryIn })
 	end
 	if not context or not root or not CharacterService.IsMoveLegit(player) then
 		reject("", true)
@@ -351,7 +355,7 @@ local function resolveFinish(player: Player, entry: Pending)
 	local distance = BasketballMath.DistanceToRim(origin, shooterPos)
 	-- Did they actually get there? Backing off (or never arriving) doesn't dunk.
 	if distance > entry.PressDistance + 1 or distance > FINISH.LayupRange then
-		reject("", true)
+		reject("Ran past the rim", true)
 		return
 	end
 	if kind == "Dunk" and distance > FINISH.DunkStopShort + FINISH.DunkArriveSlack then

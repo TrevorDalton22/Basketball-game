@@ -11,6 +11,7 @@ local Config = require(Shared:WaitForChild("Config"))
 local BasketballMath = require(Shared:WaitForChild("BasketballMath"))
 
 local CourtBuilder = {}
+CourtBuilder.ScriptVersion = 2 -- Main/ClientMain compare this to spot an old copy; bump when this file changes
 
 export type CourtHandle = {
 	Id: string,

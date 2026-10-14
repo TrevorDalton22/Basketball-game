@@ -21,23 +21,25 @@ end
 -- 1. Setup check: every script the README creates, where it must live
 --------------------------------------------------------------------------------
 
-type Expected = { Path: { string }, Class: string, File: string? }
+-- Version: the ScriptVersion each shared/server module must report (a module
+-- without one counts as 1). ClientMain checks the client modules the same way.
+type Expected = { Path: { string }, Class: string, File: string?, Version: number? }
 
 local EXPECTED: { Expected } = {
 	{ Path = { "ReplicatedStorage", "Shared" }, Class = "Folder" },
-	{ Path = { "ReplicatedStorage", "Shared", "Config" }, Class = "ModuleScript", File = "01_Shared_Config" },
-	{ Path = { "ReplicatedStorage", "Shared", "Signal" }, Class = "ModuleScript", File = "02_Shared_Signal" },
-	{ Path = { "ReplicatedStorage", "Shared", "Net" }, Class = "ModuleScript", File = "03_Shared_Net" },
-	{ Path = { "ReplicatedStorage", "Shared", "BasketballMath" }, Class = "ModuleScript", File = "04_Shared_BasketballMath" },
+	{ Path = { "ReplicatedStorage", "Shared", "Config" }, Class = "ModuleScript", File = "01_Shared_Config", Version = 2 },
+	{ Path = { "ReplicatedStorage", "Shared", "Signal" }, Class = "ModuleScript", File = "02_Shared_Signal", Version = 1 },
+	{ Path = { "ReplicatedStorage", "Shared", "Net" }, Class = "ModuleScript", File = "03_Shared_Net", Version = 2 },
+	{ Path = { "ReplicatedStorage", "Shared", "BasketballMath" }, Class = "ModuleScript", File = "04_Shared_BasketballMath", Version = 1 },
 	{ Path = { "ServerScriptService", "Server" }, Class = "Folder" },
 	{ Path = { "ServerScriptService", "Server", "Main" }, Class = "Script", File = "05_Server_Main" },
-	{ Path = { "ServerScriptService", "Server", "CharacterService" }, Class = "ModuleScript", File = "06_Server_CharacterService" },
-	{ Path = { "ServerScriptService", "Server", "RemoteGuard" }, Class = "ModuleScript", File = "07_Server_RemoteGuard" },
-	{ Path = { "ServerScriptService", "Server", "CourtBuilder" }, Class = "ModuleScript", File = "08_Server_CourtBuilder" },
-	{ Path = { "ServerScriptService", "Server", "BallService" }, Class = "ModuleScript", File = "09_Server_BallService" },
-	{ Path = { "ServerScriptService", "Server", "MatchService" }, Class = "ModuleScript", File = "10_Server_MatchService" },
-	{ Path = { "ServerScriptService", "Server", "QueueService" }, Class = "ModuleScript", File = "11_Server_QueueService" },
-	{ Path = { "ServerScriptService", "Server", "ShotService" }, Class = "ModuleScript", File = "12_Server_ShotService" },
+	{ Path = { "ServerScriptService", "Server", "CharacterService" }, Class = "ModuleScript", File = "06_Server_CharacterService", Version = 2 },
+	{ Path = { "ServerScriptService", "Server", "RemoteGuard" }, Class = "ModuleScript", File = "07_Server_RemoteGuard", Version = 1 },
+	{ Path = { "ServerScriptService", "Server", "CourtBuilder" }, Class = "ModuleScript", File = "08_Server_CourtBuilder", Version = 2 },
+	{ Path = { "ServerScriptService", "Server", "BallService" }, Class = "ModuleScript", File = "09_Server_BallService", Version = 2 },
+	{ Path = { "ServerScriptService", "Server", "MatchService" }, Class = "ModuleScript", File = "10_Server_MatchService", Version = 2 },
+	{ Path = { "ServerScriptService", "Server", "QueueService" }, Class = "ModuleScript", File = "11_Server_QueueService", Version = 1 },
+	{ Path = { "ServerScriptService", "Server", "ShotService" }, Class = "ModuleScript", File = "12_Server_ShotService", Version = 2 },
 	{ Path = { "StarterPlayer", "StarterPlayerScripts", "ClientMain" }, Class = "LocalScript", File = "13_Client_ClientMain" },
 	{ Path = { "StarterPlayer", "StarterPlayerScripts", "ClientMain", "UIKit" }, Class = "ModuleScript", File = "14_Client_UIKit" },
 	{ Path = { "StarterPlayer", "StarterPlayerScripts", "ClientMain", "MatchClient" }, Class = "ModuleScript", File = "15_Client_MatchClient" },
@@ -45,7 +47,7 @@ local EXPECTED: { Expected } = {
 	{ Path = { "StarterPlayer", "StarterPlayerScripts", "ClientMain", "ShootController" }, Class = "ModuleScript", File = "17_Client_ShootController" },
 	{ Path = { "StarterPlayer", "StarterPlayerScripts", "ClientMain", "BallVisuals" }, Class = "ModuleScript", File = "18_Client_BallVisuals" },
 	{ Path = { "StarterPlayer", "StarterPlayerScripts", "ClientMain", "Hud" }, Class = "ModuleScript", File = "19_Client_Hud" },
-	{ Path = { "ServerScriptService", "Server", "MovesService" }, Class = "ModuleScript", File = "20_Server_MovesService" },
+	{ Path = { "ServerScriptService", "Server", "MovesService" }, Class = "ModuleScript", File = "20_Server_MovesService", Version = 1 },
 	{ Path = { "StarterPlayer", "StarterPlayerScripts", "ClientMain", "MovesController" }, Class = "ModuleScript", File = "21_Client_MovesController" },
 }
 
@@ -180,6 +182,8 @@ local function fail(summary: string, details: { string })
 	for i, line in details do
 		warn(("%s   %d. %s"):format(TAG, i, line))
 	end
+	-- Players show this on screen too (Output is easy to miss)
+	ReplicatedStorage:SetAttribute("StreetHoopsSetupProblem", summary .. "\n" .. table.concat(details, "\n"))
 	warn(("%s Fix the items above, then press Play again. (README → Step 4 has the full tree.)"):format(TAG))
 	buildSafetyFloor(summary)
 	respawnFallenPlayers(true)
@@ -228,6 +232,32 @@ for _, name in { "CharacterService", "RemoteGuard", "CourtBuilder", "BallService
 		return
 	end
 end
+
+-- An old copy of one file (not re-pasted after an update) is the usual reason a
+-- feature quietly stops working, so name the exact file to paste again
+local function versionProblems(): { string }
+	local found = {}
+	for _, item in EXPECTED do
+		local name = item.Path[#item.Path]
+		local module = loaded[name]
+		if item.Version == nil or module == nil then
+			continue
+		end
+		local actual = if typeof(module) == "table" and typeof(module.ScriptVersion) == "number" then module.ScriptVersion else 1
+		if actual < item.Version then
+			table.insert(found, ("%s is an old copy (version %d, needs %d). Paste scripts/%s.luau into %s again."):format(name, actual, item.Version, item.File or name, pathText(item.Path)))
+		elseif actual > item.Version then
+			table.insert(found, ("%s is newer than this Main expects, so Main is the old copy. Paste scripts/05_Server_Main.luau into ServerScriptService > Server > Main again."):format(name))
+		end
+	end
+	return found
+end
+local stale = versionProblems()
+if #stale > 0 then
+	fail(("%d script(s) are out of date"):format(#stale), stale)
+	return
+end
+print(("%s ✓ All scripts are up to date"):format(TAG))
 
 local Net = loaded.Net
 local CharacterService = loaded.CharacterService

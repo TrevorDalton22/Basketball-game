@@ -21,6 +21,7 @@ local BasketballMath = require(Shared:WaitForChild("BasketballMath"))
 local CharacterService = require(script.Parent:WaitForChild("CharacterService"))
 
 local BallService = {}
+BallService.ScriptVersion = 2 -- Main/ClientMain compare this to spot an old copy; bump when this file changes
 
 export type BallState = "Held" | "Loose" | "InFlight" | "Scored" | "Dead"
 

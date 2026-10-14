@@ -26,6 +26,7 @@ local CharacterService = require(Server:WaitForChild("CharacterService"))
 local RemoteGuard = require(Server:WaitForChild("RemoteGuard"))
 
 local MatchService = {}
+MatchService.ScriptVersion = 2 -- Main/ClientMain compare this to spot an old copy; bump when this file changes
 
 export type Side = "Home" | "Away"
 export type MatchState = "Idle" | "Countdown" | "Live" | "Dead" | "Check" | "GameOver"

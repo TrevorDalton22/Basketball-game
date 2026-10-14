@@ -29,7 +29,7 @@ This is a standalone project. It isn't connected to any other game.
 - **Queue pads:** stand on the blue **HOME** or red **AWAY** pad. When both are taken, the match starts after 2 seconds. You can step off or press **LEAVE** at any time. While a court is in a game its pads show **IN GAME**, and anyone who walks onto the court is moved off.
 - **Ball possession:** walk into a loose ball to pick it up. Only one player can hold it at a time, and the server decides who has it.
 - **Timed shooting:** hold the shoot button and release when the meter is in the green. The release decides the shot: early means short, late means long or off the glass, and perfect almost always goes in. A defender standing in front of you lowers your chances.
-- **Layups and dunks:** drive at the rim and press shoot. There's no meter; it happens on the press. Running hard from close in is a **dunk**: you leap at the hoop, slam it and drop down in front of the rim. Dunks almost always go in and are very hard to block. A defender standing in your path can stop you short, and then the dunk becomes a layup. Driving from a bit further out, or more slowly, is a **layup**: a quick hop and a soft finish. Layups go in often, but a defender in front can contest them, or jump to block them in the short moment before the ball leaves your hands. Standing still near the rim still gives you the normal jump shot with the meter, and so does driving along the baseline under the backboard (where shots aren't allowed).
+- **Layups and dunks:** drive at the rim and press shoot. There's no meter; it happens on the press. Running hard from close in is a **dunk**: you leap at the hoop, slam it and drop down in front of the rim. Dunks almost always go in and are very hard to block. A defender standing in your path can stop you short, and then the dunk becomes a layup. Driving from a bit further out, or more slowly, is a **layup**: a quick hop and a soft finish. Layups go in often, but a defender in front can contest them, or jump to block them in the short moment before the ball leaves your hands. It only counts as a drive once you've been moving at the rim for a moment, so a quick first step or a sudden cut still gives you the jump shot. If a layup can't happen (for example you ran past the rim), a message says why. Standing still near the rim still gives you the normal jump shot with the meter, and so does driving along the baseline under the backboard (where shots aren't allowed).
 - **Steals:** on defense, get close, face the ball carrier and press steal. The closer you are, the better your chance. A successful steal knocks the ball loose. A miss leaves you slowed for a moment, so spamming it doesn't pay.
 - **Blocks:** react to the shot. Be on the ground when the shooter starts, then jump in front of them before they release. If you're in the air, close and between them and the rim, you can reject the shot into a loose ball. Bunny-hopping or hovering doesn't block anything.
 - **Crossovers:** on offense, the crossover button bursts you sideways and switches the ball to your other hand. For a split second you can't be stolen from. A defender who reaches during it gets their **ankles broken** and stumbles.
@@ -241,10 +241,11 @@ Every gameplay number is in **ReplicatedStorage › Shared › Config**. The mos
 
 ## Troubleshooting
 
-**First, read the Output window** (View → Output) right after you press Play. When the server starts, `Main` checks that all 21 scripts are in the right places, then prints one of these:
+**First, read the Output window** (View → Output) right after you press Play. When the server starts, `Main` checks that all 21 scripts are in the right places and that none is an old copy, then prints one of these:
 
-- `[Street Hoops] ✓ All 21 scripts found…` followed by `✓ Server ready`: everything loaded.
+- `[Street Hoops] ✓ All 21 scripts found…`, `✓ All scripts are up to date`, `✓ Server ready`, and then `✓ Client ready`: everything loaded.
 - `[Street Hoops] ✗ … setup problem(s) found`, followed by a numbered list. Each line says exactly what's wrong, for example *"Config is not where it should be. Found: Workspace.Config. Move it to ReplicatedStorage > Shared > Config"*. A grey floor and a red **SETUP PROBLEM** sign also appear in the game, so you don't fall forever. Fix each item and press Play again.
+- `[Street Hoops] ✗ … script(s) are out of date`: you updated some scripts but missed one. Each line names the file, for example *"MatchClient is an old copy (version 1, needs 2). Paste scripts/15_Client_MatchClient.luau into StarterPlayer > StarterPlayerScripts > ClientMain > MatchClient again."* The same message also appears **on screen** in a dark box at the top. If it says *Main is the old copy* or *ClientMain is the old copy*, re-paste that one.
 - **No `[Street Hoops]` lines at all** means `Main` itself isn't running. Check that:
   1. `Main` is a **Script**. Its Explorer icon is a page with a blue arrow. A LocalScript (person icon) or a ModuleScript doesn't run on the server.
   2. It's inside **ServerScriptService** (in the `Server` folder).
@@ -254,7 +255,8 @@ Every gameplay number is in **ReplicatedStorage › Shared › Config**. The mos
 | You see | Fix |
 |---|---|
 | You fall forever and there's no map | `Main` isn't running. See the four checks above. |
-| A **SETUP PROBLEM** sign on a grey floor | Read the numbered `[Street Hoops]` lines in Output and fix each one. |
+| A **SETUP PROBLEM** sign on a grey floor, or a dark **STREET HOOPS SETUP PROBLEM** box on screen | Read the numbered lines and fix each one (usually: paste one script again). |
+| Pressing **E** does nothing at all | A script was missed in the last update. Press Play and look for the **SETUP PROBLEM** box or `✗` lines in Output; they name the file to paste again. |
 | `… failed to load` with an error message | That script's code is incomplete or pasted into the wrong script. Copy it again from GitHub (Ctrl+A in Studio, then Ctrl+V). |
 | No HUD or meter (but the map is there) | `ClientMain` isn't a **LocalScript**, it's disabled, or modules 14–19 and 21 aren't its direct children. |
 | Warning about `Baseplate` / `SpawnLocation` | Delete them (Step 2). |
@@ -289,7 +291,7 @@ If you see a red error, copy it from the Output window and send it to me, includ
 | Signal | Tiny event helper used between modules |
 | Net | Names of all remotes (the server creates them) |
 | BasketballMath | Court geometry, 2/3-point zones, release timing, shot arcs |
-| Main | Starts every server system; runs the single update loop |
+| Main | Checks the setup and script versions, starts every server system, runs the single update loop |
 | CharacterService | Collision groups, freezing (anchored on the server), teleports, speed-hack check |
 | RemoteGuard | Rate limit + argument checks for remotes |
 | CourtBuilder | Builds the park and courts from Config |
@@ -297,7 +299,7 @@ If you see a red error, copy it from the Output window and send it to me, includ
 | MatchService | Match state machine, scores, clocks, results, practice mode |
 | QueueService | Home/Away pads and match start |
 | ShotService | Validates jump shots, layups and dunks, decides make or miss, launches the ball |
-| ClientMain | Starts the client modules |
+| ClientMain | Checks the client script versions and starts the client modules (any problem shows on screen) |
 | UIKit | UI helpers and theme |
 | MatchClient | Reads the match state the server publishes |
 | ShotMeter | The timing meter |
@@ -323,4 +325,6 @@ Each step is added on its own and tested before the next one starts:
 
 ## Updating your copy
 
-When the code changes, I'll list exactly which numbered files changed. Re-paste only those scripts, the same way as in Step 5.
+When the code changes, I'll list exactly which numbered files changed. Re-paste only those scripts, the same way as in Step 5. The list always includes `05_Server_Main` and `13_Client_ClientMain`, because they hold the version check.
+
+If you miss one, nothing breaks quietly. When you press Play, the game names the old script (in Output and on screen) so you know exactly which file to paste again.

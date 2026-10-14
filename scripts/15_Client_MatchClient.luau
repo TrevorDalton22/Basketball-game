@@ -6,12 +6,14 @@
 
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local RunService = game:GetService("RunService")
 
 local Signal = require(ReplicatedStorage:WaitForChild("Shared"):WaitForChild("Signal"))
 local Config = require(ReplicatedStorage:WaitForChild("Shared"):WaitForChild("Config"))
 local BasketballMath = require(ReplicatedStorage:WaitForChild("Shared"):WaitForChild("BasketballMath"))
 
 local MatchClient = {}
+MatchClient.ScriptVersion = 2 -- Main/ClientMain compare this to spot an old copy; bump when this file changes
 
 local player = Players.LocalPlayer
 
@@ -19,6 +21,48 @@ local player = Players.LocalPlayer
 MatchClient.Changed = Signal.new()
 
 local courts: { Model } = {}
+
+-- Our own recent positions, so a "drive" means moving at the rim for a moment
+-- (the server measures it the same way), not just this frame's velocity
+type Sample = { Position: Vector3, Time: number }
+local trail: { Sample } = {}
+local trailRoot: BasePart? = nil
+local DRIVE_WINDOW = 0.2 -- seconds of movement a finish is judged over
+local TRAIL_AGE = 0.5
+
+local function recordTrail()
+	local character = player.Character
+	local root = character and character:FindFirstChild("HumanoidRootPart")
+	if not root or not root:IsA("BasePart") then
+		table.clear(trail)
+		trailRoot = nil
+		return
+	end
+	if root ~= trailRoot then
+		table.clear(trail) -- new character: old positions mean nothing
+		trailRoot = root
+	end
+	local now = os.clock()
+	table.insert(trail, { Position = root.Position, Time = now })
+	while trail[1] and now - trail[1].Time > TRAIL_AGE do
+		table.remove(trail, 1)
+	end
+end
+
+-- Speed toward `direction` over the last DRIVE_WINDOW seconds (0 if we
+-- haven't been tracked that long)
+local function drivenSpeed(position: Vector3, direction: Vector3): number
+	local now = os.clock()
+	for i = #trail, 1, -1 do
+		local sample = trail[i]
+		local elapsed = now - sample.Time
+		if elapsed >= DRIVE_WINDOW then
+			local delta = position - sample.Position
+			return Vector3.new(delta.X, 0, delta.Z):Dot(direction) / elapsed
+		end
+	end
+	return 0
+end
 
 export type Role = "Playing" | "Queued" | "None"
 
@@ -46,6 +90,7 @@ local function watchCourt(model: Model)
 end
 
 function MatchClient.Init()
+	RunService.Heartbeat:Connect(recordTrail)
 	task.spawn(function()
 		local folder = workspace:WaitForChild("Courts")
 		folder.ChildAdded:Connect(function(child)
@@ -163,7 +208,9 @@ function MatchClient.PredictFinish(): (string?, Vector3?)
 		return nil, nil
 	end
 	local v = root.AssemblyLinearVelocity
-	local approach = Vector3.new(v.X, 0, v.Z):Dot(offset.Unit)
+	-- Moving at the rim right now AND for the last moment (a sudden cut is a
+	-- jump shot; the server would not count it as a drive yet)
+	local approach = math.min(Vector3.new(v.X, 0, v.Z):Dot(offset.Unit), drivenSpeed(root.Position, offset.Unit))
 	-- The server sees us a little later (further out) than we see ourselves; it
 	-- allows for about 0.1 s of that, this covers some extra on slow connections
 	local judged = distance + math.max(approach, 0) * 0.05

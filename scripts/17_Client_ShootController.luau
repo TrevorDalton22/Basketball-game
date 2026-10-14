@@ -20,6 +20,7 @@ local MatchClient = require(Client:WaitForChild("MatchClient"))
 local ShotMeter = require(Client:WaitForChild("ShotMeter"))
 
 local ShootController = {}
+ShootController.ScriptVersion = 2 -- Main/ClientMain compare this to spot an old copy; bump when this file changes
 
 local SHOT = Config.Shot
 local FINISH = Config.Finish
@@ -378,7 +379,14 @@ function ShootController.Init()
 
 	Net.Event("Feedback").OnClientEvent:Connect(function(kind: string, data: any)
 		if kind == "ShotRejected" and typeof(data) == "table" and data.Token == shotToken then
-			finishingUntil = 0 -- a refused finish frees us to shoot again
+			-- Refused: the next press may go straight away, unless the server set
+			-- a wait (then hold off rather than show a meter it would refuse)
+			finishingUntil = 0
+			lastBeganAt = -math.huge
+			local retryIn = tonumber(data.RetryIn)
+			if retryIn and retryIn > 0 then
+				suppressUntil = math.max(suppressUntil, os.clock() + math.min(retryIn, 3))
+			end
 			if holding then
 				holding = false
 				heldBall = nil

@@ -20,6 +20,7 @@ local UIKit = require(Client:WaitForChild("UIKit"))
 local MatchClient = require(Client:WaitForChild("MatchClient"))
 
 local Hud = {}
+Hud.ScriptVersion = 2 -- Main/ClientMain compare this to spot an old copy; bump when this file changes
 
 local THEME = Config.UI
 local player = Players.LocalPlayer

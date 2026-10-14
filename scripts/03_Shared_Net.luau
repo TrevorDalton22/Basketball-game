@@ -7,12 +7,13 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local RunService = game:GetService("RunService")
 
 local Net = {}
+Net.ScriptVersion = 2 -- Main/ClientMain compare this to spot an old copy; bump when this file changes
 
 local EVENTS: { [string]: string } = {
 	-- client → server
 	ShootStart = "ShootStart", -- (shotNumber: number) echoed back in feedback
 	ShootRelease = "ShootRelease", -- (holdTime: number)
-	Finish = "Finish", -- (shotNumber: number) layup or dunk; the server picks which
+	Finish = "Finish", -- (shotNumber: number, kind: "Layup" | "Dunk") the server judges it and may only downgrade a dunk
 	LeaveQueue = "LeaveQueue", -- ()
 	LeaveMatch = "LeaveMatch", -- () forfeit the current match
 	Steal = "Steal", -- () reach for the ball carrier's ball

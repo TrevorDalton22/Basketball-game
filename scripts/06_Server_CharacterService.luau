@@ -13,6 +13,7 @@ local Config = require(Shared:WaitForChild("Config"))
 local Signal = require(Shared:WaitForChild("Signal"))
 
 local CharacterService = {}
+CharacterService.ScriptVersion = 2 -- Main/ClientMain compare this to spot an old copy; bump when this file changes
 
 local GROUPS = Config.Collision
 local ANTI = Config.AntiCheat
@@ -31,8 +32,10 @@ local slowed: { [Player]: Slow } = {}
 
 type Sample = { Position: Vector3, Time: number }
 local samples: { [Player]: Sample } = {} -- latest position sample (anti-teleport baseline)
-local history: { [Player]: { Sample } } = {} -- last few samples, oldest first (speed measurement)
-local HISTORY_LENGTH = 4
+local history: { [Player]: { Sample } } = {} -- recent samples, oldest first (speed measurement)
+local HISTORY_INTERVAL = 0.05 -- sampled often so a drive is measured within ~0.1 s of starting
+local HISTORY_AGE = 0.85 -- keep this many seconds (ApproachSpeed looks back at most 0.8 s)
+local historyTimer = 0
 local suspiciousUntil: { [Player]: number } = {}
 local sampleTimer = 0
 -- Last time each match player was standing on something (checked every frame
@@ -356,8 +359,9 @@ function CharacterService.IsSuspicious(player: Player): boolean
 	return untilTime ~= nil and untilTime > os.clock()
 end
 
--- Called from Main's Heartbeat. Samples positions a few times a second and
--- flags anyone whose horizontal speed is far beyond what running allows.
+-- Called from Main's Heartbeat. Records recent positions (for ApproachSpeed),
+-- samples them a few times a second, and flags anyone whose horizontal speed
+-- is far beyond what running allows.
 function CharacterService.Update(dt: number)
 	-- End expired slow-downs
 	local clock = os.clock()
@@ -369,6 +373,25 @@ function CharacterService.Update(dt: number)
 	end
 	for player in inMatch do
 		trackGround(player, clock)
+	end
+
+	historyTimer += dt
+	if historyTimer >= HISTORY_INTERVAL then
+		historyTimer = 0
+		for _, player in Players:GetPlayers() do
+			local root = CharacterService.GetRoot(player)
+			if root and not frozen[player] then
+				local list = history[player]
+				if not list then
+					list = {}
+					history[player] = list
+				end
+				table.insert(list, { Position = root.Position, Time = clock })
+				while list[1] and clock - list[1].Time > HISTORY_AGE do
+					table.remove(list, 1)
+				end
+			end
+		end
 	end
 
 	sampleTimer += dt
@@ -400,14 +423,7 @@ function CharacterService.Update(dt: number)
 				suspiciousUntil[player] = now + ANTI.PenaltyTime
 			end
 		end
-		local sample = { Position = position, Time = now }
-		samples[player] = sample
-		local list = history[player] or {}
-		table.insert(list, sample)
-		if #list > HISTORY_LENGTH then
-			table.remove(list, 1)
-		end
-		history[player] = list
+		samples[player] = { Position = position, Time = now }
 	end
 end
 

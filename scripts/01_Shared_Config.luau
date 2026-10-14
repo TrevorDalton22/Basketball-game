@@ -4,6 +4,7 @@
 -- but only the server's copy is ever trusted for gameplay decisions.
 
 local Config = {}
+Config.ScriptVersion = 2 -- Main/ClientMain compare this to spot an old copy; bump when this file changes
 
 -- Court geometry, in studs. Each court is a half court: the local origin is the
 -- centre of the baseline at floor height, +Z points from the baseline toward
