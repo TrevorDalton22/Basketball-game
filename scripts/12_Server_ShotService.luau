@@ -21,7 +21,7 @@ local MatchService = require(Server:WaitForChild("MatchService"))
 local RemoteGuard = require(Server:WaitForChild("RemoteGuard"))
 
 local ShotService = {}
-ShotService.ScriptVersion = 2 -- Main/ClientMain compare this to spot an old copy; bump when this file changes
+ShotService.ScriptVersion = 3 -- Main/ClientMain compare this to spot an old copy; bump when this file changes
 
 local SHOT = Config.Shot
 local DEFENSE = Config.Defense
@@ -34,7 +34,7 @@ local MAX_HOLD_TIME = SHOT.FillTime * SHOT.MaxHoldFraction
 -- then can they block it: you have to react to the shot, not pogo-jump)
 -- Kind: "Jumper" (resolved by ShootRelease) or "Layup"/"Dunk" (resolved on a timer)
 -- PressDistance: distance to the rim when a layup/dunk was pressed
-type Pending = { Ball: any, StartedAt: number, Token: number, ClientToken: number, DefenderGrounded: boolean, Kind: string, PressDistance: number }
+type Pending = { Ball: any, StartedAt: number, Token: number, ClientToken: number, DefenderGrounded: boolean, Kind: string, PressDistance: number, PressPosition: Vector3 }
 
 local pending: { [Player]: Pending } = {}
 local lastShotAt: { [Player]: number } = {}
@@ -355,7 +355,11 @@ local function resolveFinish(player: Player, entry: Pending)
 	local distance = BasketballMath.DistanceToRim(origin, shooterPos)
 	-- Did they actually get there? Backing off (or never arriving) doesn't dunk.
 	if distance > entry.PressDistance + 1 or distance > FINISH.LayupRange then
-		reject("Ran past the rim", true)
+		-- Past the rim (beyond it from where they pressed), or never got there
+		local pressToRim = rim - entry.PressPosition
+		local rimToNow = shooterPos - rim
+		local crossed = Vector3.new(pressToRim.X, 0, pressToRim.Z):Dot(Vector3.new(rimToNow.X, 0, rimToNow.Z)) > 0
+		reject(if crossed then "Ran past the rim" else "Couldn't get to the rim", true)
 		return
 	end
 	if kind == "Dunk" and distance > FINISH.DunkStopShort + FINISH.DunkArriveSlack then
@@ -432,8 +436,8 @@ local function onFinish(player: Player, clientToken: any, clientKind: any)
 		return
 	end
 	local shotNumber: number = if RemoteGuard.IsNumber(clientToken, 0, 1e9) then clientToken else 0
-	local function refuse(reason: string?)
-		feedback:FireClient(player, "ShotRejected", { Reason = reason or "", Token = shotNumber })
+	local function refuse(reason: string?, retryIn: number?)
+		feedback:FireClient(player, "ShotRejected", { Reason = reason or "", Token = shotNumber, RetryIn = retryIn })
 	end
 	if pending[player] then
 		refuse()
@@ -442,7 +446,7 @@ local function onFinish(player: Player, clientToken: any, clientKind: any)
 	local now = os.clock()
 	local last = lastShotAt[player]
 	if last and now - last < SHOT.MinShotInterval then
-		refuse()
+		refuse(nil, last + SHOT.MinShotInterval - now)
 		return
 	end
 	local ball = BallService.FindHeldBy(player)
@@ -480,6 +484,7 @@ local function onFinish(player: Player, clientToken: any, clientKind: any)
 		DefenderGrounded = defenderGrounded,
 		Kind = kind,
 		PressDistance = pressDistance,
+		PressPosition = root.Position,
 	}
 	pending[player] = entry
 	lastShotAt[player] = now
@@ -503,9 +508,10 @@ local function onShootStart(player: Player, clientToken: any)
 		return
 	end
 	local shotNumber: number = if RemoteGuard.IsNumber(clientToken, 0, 1e9) then clientToken else 0
-	local function refuse(reason: string?)
+	local function refuse(reason: string?, retryIn: number?)
 		-- Tell the client so its meter does not show a shot that never happened
-		feedback:FireClient(player, "ShotRejected", { Reason = reason or "", Token = shotNumber })
+		-- (and, during a wait, how long to hold off)
+		feedback:FireClient(player, "ShotRejected", { Reason = reason or "", Token = shotNumber, RetryIn = retryIn })
 	end
 	if pending[player] then
 		refuse()
@@ -514,7 +520,7 @@ local function onShootStart(player: Player, clientToken: any)
 	local now = os.clock()
 	local last = lastShotAt[player]
 	if last and now - last < SHOT.MinShotInterval then
-		refuse()
+		refuse(nil, last + SHOT.MinShotInterval - now)
 		return
 	end
 	local ball = BallService.FindHeldBy(player)
@@ -535,7 +541,7 @@ local function onShootStart(player: Player, clientToken: any)
 	local defenderGrounded = defender ~= nil and CharacterService.WasGroundedWithin(defender, DEFENSE.DefenderGroundedAtShot)
 	tokenCounter += 1
 	local token = tokenCounter
-	pending[player] = { Ball = ball, StartedAt = now, Token = token, ClientToken = shotNumber, DefenderGrounded = defenderGrounded, Kind = "Jumper", PressDistance = 0 }
+	pending[player] = { Ball = ball, StartedAt = now, Token = token, ClientToken = shotNumber, DefenderGrounded = defenderGrounded, Kind = "Jumper", PressDistance = 0, PressPosition = root.Position }
 	lastShotAt[player] = now
 	ball.Part:SetAttribute("Shooting", true)
 

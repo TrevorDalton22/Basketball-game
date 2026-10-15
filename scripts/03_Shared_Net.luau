@@ -7,7 +7,7 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local RunService = game:GetService("RunService")
 
 local Net = {}
-Net.ScriptVersion = 2 -- Main/ClientMain compare this to spot an old copy; bump when this file changes
+Net.ScriptVersion = 3 -- Main/ClientMain compare this to spot an old copy; bump when this file changes
 
 local EVENTS: { [string]: string } = {
 	-- client → server
@@ -18,6 +18,7 @@ local EVENTS: { [string]: string } = {
 	LeaveMatch = "LeaveMatch", -- () forfeit the current match
 	Steal = "Steal", -- () reach for the ball carrier's ball
 	Crossover = "Crossover", -- (direction: -1 | 1) switch hands with a sideways burst
+	ClientReady = "ClientReady", -- (version: number) ClientMain checks in so Main can spot an old copy
 	-- server → client
 	Feedback = "Feedback", -- (kind: string, data: table)
 }

@@ -17,6 +17,12 @@ if RunService:IsClient() then
 	return
 end
 
+-- This file's version, published first so ClientMain can tell when Main is the
+-- old copy, and the version ClientMain must check in with (see the end)
+local MAIN_VERSION = 3
+local CLIENT_MAIN_VERSION = 3
+ReplicatedStorage:SetAttribute("StreetHoopsMainVersion", MAIN_VERSION)
+
 --------------------------------------------------------------------------------
 -- 1. Setup check: every script the README creates, where it must live
 --------------------------------------------------------------------------------
@@ -29,7 +35,7 @@ local EXPECTED: { Expected } = {
 	{ Path = { "ReplicatedStorage", "Shared" }, Class = "Folder" },
 	{ Path = { "ReplicatedStorage", "Shared", "Config" }, Class = "ModuleScript", File = "01_Shared_Config", Version = 2 },
 	{ Path = { "ReplicatedStorage", "Shared", "Signal" }, Class = "ModuleScript", File = "02_Shared_Signal", Version = 1 },
-	{ Path = { "ReplicatedStorage", "Shared", "Net" }, Class = "ModuleScript", File = "03_Shared_Net", Version = 2 },
+	{ Path = { "ReplicatedStorage", "Shared", "Net" }, Class = "ModuleScript", File = "03_Shared_Net", Version = 3 },
 	{ Path = { "ReplicatedStorage", "Shared", "BasketballMath" }, Class = "ModuleScript", File = "04_Shared_BasketballMath", Version = 1 },
 	{ Path = { "ServerScriptService", "Server" }, Class = "Folder" },
 	{ Path = { "ServerScriptService", "Server", "Main" }, Class = "Script", File = "05_Server_Main" },
@@ -39,7 +45,7 @@ local EXPECTED: { Expected } = {
 	{ Path = { "ServerScriptService", "Server", "BallService" }, Class = "ModuleScript", File = "09_Server_BallService", Version = 2 },
 	{ Path = { "ServerScriptService", "Server", "MatchService" }, Class = "ModuleScript", File = "10_Server_MatchService", Version = 2 },
 	{ Path = { "ServerScriptService", "Server", "QueueService" }, Class = "ModuleScript", File = "11_Server_QueueService", Version = 1 },
-	{ Path = { "ServerScriptService", "Server", "ShotService" }, Class = "ModuleScript", File = "12_Server_ShotService", Version = 2 },
+	{ Path = { "ServerScriptService", "Server", "ShotService" }, Class = "ModuleScript", File = "12_Server_ShotService", Version = 3 },
 	{ Path = { "StarterPlayer", "StarterPlayerScripts", "ClientMain" }, Class = "LocalScript", File = "13_Client_ClientMain" },
 	{ Path = { "StarterPlayer", "StarterPlayerScripts", "ClientMain", "UIKit" }, Class = "ModuleScript", File = "14_Client_UIKit" },
 	{ Path = { "StarterPlayer", "StarterPlayerScripts", "ClientMain", "MatchClient" }, Class = "ModuleScript", File = "15_Client_MatchClient" },
@@ -257,7 +263,7 @@ if #stale > 0 then
 	fail(("%d script(s) are out of date"):format(#stale), stale)
 	return
 end
-print(("%s ✓ All scripts are up to date"):format(TAG))
+print(("%s ✓ Shared and server scripts are up to date (ClientMain checks the client ones)"):format(TAG))
 
 local Net = loaded.Net
 local CharacterService = loaded.CharacterService
@@ -312,6 +318,71 @@ end
 
 -- Anyone who spawned before the map finished building lands on it now
 respawnFallenPlayers(false)
+
+-- An old ClientMain can't report itself, so every current one checks in. A
+-- player whose client never does is told (in Output and on their screen).
+local CHECK_IN_TIME = 30
+local checkedIn: { [Player]: boolean } = {}
+local clientNotices: { [Player]: ScreenGui } = {}
+
+local function showClientNotice(player: Player, text: string)
+	warn(("%s ✗ %s: %s"):format(TAG, player.Name, text))
+	local playerGui = player:FindFirstChildOfClass("PlayerGui")
+	if not playerGui or clientNotices[player] then
+		return
+	end
+	-- Made by the server, so it shows even when the player's ClientMain is old
+	local gui = Instance.new("ScreenGui")
+	gui.Name = "StreetHoopsClientProblem"
+	gui.ResetOnSpawn = false
+	gui.DisplayOrder = 100
+	local label = Instance.new("TextLabel")
+	label.AnchorPoint = Vector2.new(0.5, 0)
+	label.Position = UDim2.new(0.5, 0, 0, 70)
+	label.Size = UDim2.new(0.8, 0, 0, 90)
+	label.BackgroundColor3 = Color3.fromRGB(20, 22, 30)
+	label.BackgroundTransparency = 0.05
+	label.TextColor3 = Color3.fromRGB(255, 130, 130)
+	label.Font = Enum.Font.GothamBold
+	label.TextSize = 17
+	label.TextWrapped = true
+	label.Text = "STREET HOOPS SETUP PROBLEM\n" .. text
+	label.Parent = gui
+	gui.Parent = playerGui
+	clientNotices[player] = gui
+end
+
+Net.Event("ClientReady").OnServerEvent:Connect(function(player: Player, version: any)
+	if checkedIn[player] then
+		return
+	end
+	checkedIn[player] = true
+	local notice = clientNotices[player]
+	if notice then
+		-- It was only slow to start
+		notice:Destroy()
+		clientNotices[player] = nil
+	end
+	if typeof(version) == "number" and version < CLIENT_MAIN_VERSION then
+		showClientNotice(player, "ClientMain is an old copy. Paste scripts/13_Client_ClientMain.luau into StarterPlayer > StarterPlayerScripts > ClientMain again.")
+	end
+end)
+
+local function watchClient(player: Player)
+	task.delay(CHECK_IN_TIME, function()
+		if player.Parent and not checkedIn[player] then
+			showClientNotice(player, "ClientMain didn't start, or is an old copy. Paste scripts/13_Client_ClientMain.luau into the LocalScript StarterPlayer > StarterPlayerScripts > ClientMain again.")
+		end
+	end)
+end
+Players.PlayerAdded:Connect(watchClient)
+for _, player in Players:GetPlayers() do
+	watchClient(player)
+end
+Players.PlayerRemoving:Connect(function(player)
+	checkedIn[player] = nil
+	clientNotices[player] = nil
+end)
 
 local function step(name: string, fn: (number) -> (), dt: number)
 	local ok, err = pcall(function()

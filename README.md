@@ -241,12 +241,13 @@ Every gameplay number is in **ReplicatedStorage › Shared › Config**. The mos
 
 ## Troubleshooting
 
-**First, read the Output window** (View → Output) right after you press Play. When the server starts, `Main` checks that all 21 scripts are in the right places and that none is an old copy, then prints one of these:
+**First, read the Output window** (View → Output) right after you press Play. When the server starts, `Main` checks that all 21 scripts are in the right places and that the shared and server scripts aren't old copies. Then `ClientMain` checks the client scripts (and checks that `Main` is current). You'll see one of these:
 
-- `[Street Hoops] ✓ All 21 scripts found…`, `✓ All scripts are up to date`, `✓ Server ready`, and then `✓ Client ready`: everything loaded.
+- `[Street Hoops] ✓ All 21 scripts found…`, `✓ Shared and server scripts are up to date…`, `✓ Server ready`, and then `✓ Client ready`: everything loaded.
 - `[Street Hoops] ✗ … setup problem(s) found`, followed by a numbered list. Each line says exactly what's wrong, for example *"Config is not where it should be. Found: Workspace.Config. Move it to ReplicatedStorage > Shared > Config"*. A grey floor and a red **SETUP PROBLEM** sign also appear in the game, so you don't fall forever. Fix each item and press Play again.
-- `[Street Hoops] ✗ … script(s) are out of date`: you updated some scripts but missed one. Each line names the file, for example *"MatchClient is an old copy (version 1, needs 2). Paste scripts/15_Client_MatchClient.luau into StarterPlayer > StarterPlayerScripts > ClientMain > MatchClient again."* The same message also appears **on screen** in a dark box at the top. If it says *Main is the old copy* or *ClientMain is the old copy*, re-paste that one.
-- **No `[Street Hoops]` lines at all** means `Main` itself isn't running. Check that:
+- `[Street Hoops] ✗ … script(s) are out of date` (from `Main`), or `[Street Hoops] ✗ <Name> is an old copy …` (from `ClientMain`): you updated some scripts but missed one. Each line names the file, for example *"ShotService is an old copy (version 2, needs 3). Paste scripts/12_Server_ShotService.luau into ServerScriptService > Server > ShotService again."* If it says *Main is an old copy* or *ClientMain is the old copy*, paste that one again (05 or 13).
+- Every problem also appears **on screen** in a dark **STREET HOOPS SETUP PROBLEM** box at the top, so you don't need Output open to see it.
+- `✗ The server never started …` (and no other `[Street Hoops]` lines, or none at all) means `Main` itself isn't running. Check that:
   1. `Main` is a **Script**. Its Explorer icon is a page with a blue arrow. A LocalScript (person icon) or a ModuleScript doesn't run on the server.
   2. It's inside **ServerScriptService** (in the `Server` folder).
   3. Its **Enabled** box is ticked in Properties.
@@ -258,7 +259,7 @@ Every gameplay number is in **ReplicatedStorage › Shared › Config**. The mos
 | A **SETUP PROBLEM** sign on a grey floor, or a dark **STREET HOOPS SETUP PROBLEM** box on screen | Read the numbered lines and fix each one (usually: paste one script again). |
 | Pressing **E** does nothing at all | A script was missed in the last update. Press Play and look for the **SETUP PROBLEM** box or `✗` lines in Output; they name the file to paste again. |
 | `… failed to load` with an error message | That script's code is incomplete or pasted into the wrong script. Copy it again from GitHub (Ctrl+A in Studio, then Ctrl+V). |
-| No HUD or meter (but the map is there) | `ClientMain` isn't a **LocalScript**, it's disabled, or modules 14–19 and 21 aren't its direct children. |
+| No HUD or meter (but the map is there) | `ClientMain` isn't a **LocalScript**, it's disabled, or modules 14–19 and 21 aren't its direct children. After 30 seconds the server shows *"ClientMain didn't start, or is an old copy"* on screen. |
 | Warning about `Baseplate` / `SpawnLocation` | Delete them (Step 2). |
 
 If you see a red error, copy it from the Output window and send it to me, including the script name and line number.
