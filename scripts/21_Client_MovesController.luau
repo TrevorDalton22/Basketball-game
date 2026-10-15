@@ -20,6 +20,7 @@ local ShootController = require(Client:WaitForChild("ShootController"))
 
 local MovesController = {}
 MovesController.ScriptVersion = 2 -- Main/ClientMain compare this to spot an old copy; bump when this file changes
+MovesController.ScriptFile = "21_Client_MovesController" -- and this to spot another file's code pasted here
 
 local MOVES = Config.Moves
 local DEFENSE = Config.Defense

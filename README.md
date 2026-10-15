@@ -246,7 +246,7 @@ Every gameplay number is in **ReplicatedStorage › Shared › Config**. The mos
 - `[Street Hoops] ✓ All 21 scripts found…`, `✓ Shared and server scripts are up to date…`, `✓ Server ready`, and then `✓ Client ready`: everything loaded.
 - `[Street Hoops] ✗ … setup problem(s) found`, followed by a numbered list. Each line says exactly what's wrong, for example *"Config is not where it should be. Found: Workspace.Config. Move it to ReplicatedStorage > Shared > Config"*. A grey floor and a red **SETUP PROBLEM** sign also appear in the game, so you don't fall forever. Fix each item and press Play again.
 - `[Street Hoops] ✗ … script(s) are out of date` (from `Main`), or `[Street Hoops] ✗ <Name> is an old copy …` (from `ClientMain`): you updated some scripts but missed one. Each line names the file, for example *"ShotService is an old copy (version 2, needs 3). Paste scripts/12_Server_ShotService.luau into ServerScriptService > Server > ShotService again."* If it says *Main is an old copy* or *ClientMain is the old copy*, paste that one again (05 or 13).
-- Every problem also appears **on screen** in a dark **STREET HOOPS SETUP PROBLEM** box at the top, so you don't need Output open to see it.
+- Problems also appear **on screen** in a dark **STREET HOOPS SETUP PROBLEM** box at the top. (If `ClientMain` itself can't run, because it's missing or isn't a LocalScript, you get the grey floor and sign instead, and the numbered details are in Output.)
 - `✗ The server never started …` (and no other `[Street Hoops]` lines, or none at all) means `Main` itself isn't running. Check that:
   1. `Main` is a **Script**. Its Explorer icon is a page with a blue arrow. A LocalScript (person icon) or a ModuleScript doesn't run on the server.
   2. It's inside **ServerScriptService** (in the `Server` folder).
@@ -258,8 +258,8 @@ Every gameplay number is in **ReplicatedStorage › Shared › Config**. The mos
 | You fall forever and there's no map | `Main` isn't running. See the four checks above. |
 | A **SETUP PROBLEM** sign on a grey floor, or a dark **STREET HOOPS SETUP PROBLEM** box on screen | Read the numbered lines and fix each one (usually: paste one script again). |
 | Pressing **E** does nothing at all | A script was missed in the last update. Press Play and look for the **SETUP PROBLEM** box or `✗` lines in Output; they name the file to paste again. |
-| `… failed to load` with an error message | That script's code is incomplete or pasted into the wrong script. Copy it again from GitHub (Ctrl+A in Studio, then Ctrl+V). |
-| No HUD or meter (but the map is there) | `ClientMain` isn't a **LocalScript**, it's disabled, or modules 14–19 and 21 aren't its direct children. After 30 seconds the server shows *"ClientMain didn't start, or is an old copy"* on screen. |
+| `… failed to load`, `… is still loading after 5 seconds`, or `… holds the code from scripts/…` | That script's code is incomplete or from another file. Paste the named file into it again (Ctrl+A in the script, then Ctrl+V). For a load error, the red line just above in Output is the script's own error. |
+| No HUD or meter (but the map is there) | `ClientMain` is disabled or is an old copy. After 30 seconds the server says which on screen (*"ClientMain is disabled…"* or *"ClientMain didn't start, or is an old copy…"*). If `ClientMain` isn't a LocalScript, or modules 14–19 and 21 aren't its direct children, the setup check catches it instead and you get the SETUP PROBLEM sign. |
 | Warning about `Baseplate` / `SpawnLocation` | Delete them (Step 2). |
 
 If you see a red error, copy it from the Output window and send it to me, including the script name and line number.

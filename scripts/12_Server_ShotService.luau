@@ -22,6 +22,7 @@ local RemoteGuard = require(Server:WaitForChild("RemoteGuard"))
 
 local ShotService = {}
 ShotService.ScriptVersion = 3 -- Main/ClientMain compare this to spot an old copy; bump when this file changes
+ShotService.ScriptFile = "12_Server_ShotService" -- and this to spot another file's code pasted here
 
 local SHOT = Config.Shot
 local DEFENSE = Config.Defense

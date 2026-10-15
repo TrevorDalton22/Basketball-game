@@ -17,8 +17,8 @@ end
 
 -- This file's version, sent to Main (which flags an old ClientMain), and the
 -- version Main must publish (an older or missing one means Main is the old copy)
-local CLIENT_MAIN_VERSION = 3
-local EXPECTED_MAIN_VERSION = 3
+local CLIENT_MAIN_VERSION = 4
+local EXPECTED_MAIN_VERSION = 4
 
 local MAIN_WHERE = "ServerScriptService > Server > Main"
 local CLIENT_MAIN_WHERE = "StarterPlayer > StarterPlayerScripts > ClientMain"
@@ -91,6 +91,16 @@ end
 ReplicatedStorage:GetAttributeChangedSignal(SERVER_PROBLEM):Connect(showProblems)
 showProblems() -- the server may have reported a problem before this script ran
 
+-- Check in with Main as soon as the server is up (Main names a ClientMain that
+-- never does), on its own thread so nothing below can hold it up
+task.spawn(function()
+	local remotes = ReplicatedStorage:WaitForChild("Remotes", 60)
+	local hello = remotes and remotes:WaitForChild("ClientReady", 5)
+	if hello and hello:IsA("RemoteEvent") then
+		hello:FireServer(CLIENT_MAIN_VERSION)
+	end
+end)
+
 --------------------------------------------------------------------------------
 -- 1. Find every module. Requiring one while another is missing would wait
 --    forever (they wait for each other), so check they all exist first.
@@ -103,22 +113,22 @@ if not Shared then
 end
 local CLIENT_PATH = CLIENT_MAIN_WHERE .. " > "
 
--- Every module the client uses, in load order (each after the ones it uses),
+-- Every module the client uses, in load order (each after the ones it Uses),
 -- with the ScriptVersion it must report (a module without one counts as 1).
 -- Main checks the server modules the same way.
-type Module = { Name: string, Parent: Instance, Where: string, File: string, Version: number }
+type Module = { Name: string, Parent: Instance, Where: string, File: string, Version: number, Uses: { string } }
 local MODULES: { Module } = {
-	{ Name = "Config", Parent = Shared, Where = "ReplicatedStorage > Shared > Config", File = "01_Shared_Config", Version = 2 },
-	{ Name = "Signal", Parent = Shared, Where = "ReplicatedStorage > Shared > Signal", File = "02_Shared_Signal", Version = 1 },
-	{ Name = "Net", Parent = Shared, Where = "ReplicatedStorage > Shared > Net", File = "03_Shared_Net", Version = 3 },
-	{ Name = "BasketballMath", Parent = Shared, Where = "ReplicatedStorage > Shared > BasketballMath", File = "04_Shared_BasketballMath", Version = 1 },
-	{ Name = "UIKit", Parent = script, Where = CLIENT_PATH .. "UIKit", File = "14_Client_UIKit", Version = 1 },
-	{ Name = "MatchClient", Parent = script, Where = CLIENT_PATH .. "MatchClient", File = "15_Client_MatchClient", Version = 2 },
-	{ Name = "ShotMeter", Parent = script, Where = CLIENT_PATH .. "ShotMeter", File = "16_Client_ShotMeter", Version = 1 },
-	{ Name = "ShootController", Parent = script, Where = CLIENT_PATH .. "ShootController", File = "17_Client_ShootController", Version = 3 },
-	{ Name = "BallVisuals", Parent = script, Where = CLIENT_PATH .. "BallVisuals", File = "18_Client_BallVisuals", Version = 2 },
-	{ Name = "Hud", Parent = script, Where = CLIENT_PATH .. "Hud", File = "19_Client_Hud", Version = 2 },
-	{ Name = "MovesController", Parent = script, Where = CLIENT_PATH .. "MovesController", File = "21_Client_MovesController", Version = 2 },
+	{ Name = "Config", Parent = Shared, Where = "ReplicatedStorage > Shared > Config", File = "01_Shared_Config", Version = 2, Uses = {} },
+	{ Name = "Signal", Parent = Shared, Where = "ReplicatedStorage > Shared > Signal", File = "02_Shared_Signal", Version = 1, Uses = {} },
+	{ Name = "Net", Parent = Shared, Where = "ReplicatedStorage > Shared > Net", File = "03_Shared_Net", Version = 3, Uses = {} },
+	{ Name = "BasketballMath", Parent = Shared, Where = "ReplicatedStorage > Shared > BasketballMath", File = "04_Shared_BasketballMath", Version = 1, Uses = { "Config" } },
+	{ Name = "UIKit", Parent = script, Where = CLIENT_PATH .. "UIKit", File = "14_Client_UIKit", Version = 1, Uses = { "Config" } },
+	{ Name = "MatchClient", Parent = script, Where = CLIENT_PATH .. "MatchClient", File = "15_Client_MatchClient", Version = 2, Uses = { "Signal", "Config", "BasketballMath" } },
+	{ Name = "ShotMeter", Parent = script, Where = CLIENT_PATH .. "ShotMeter", File = "16_Client_ShotMeter", Version = 1, Uses = { "Config", "Net", "UIKit" } },
+	{ Name = "ShootController", Parent = script, Where = CLIENT_PATH .. "ShootController", File = "17_Client_ShootController", Version = 3, Uses = { "Config", "Net", "BasketballMath", "UIKit", "MatchClient", "ShotMeter" } },
+	{ Name = "BallVisuals", Parent = script, Where = CLIENT_PATH .. "BallVisuals", File = "18_Client_BallVisuals", Version = 2, Uses = { "Config", "UIKit", "MatchClient" } },
+	{ Name = "Hud", Parent = script, Where = CLIENT_PATH .. "Hud", File = "19_Client_Hud", Version = 2, Uses = { "Config", "Net", "UIKit", "MatchClient" } },
+	{ Name = "MovesController", Parent = script, Where = CLIENT_PATH .. "MovesController", File = "21_Client_MovesController", Version = 2, Uses = { "Config", "Net", "UIKit", "MatchClient", "ShootController" } },
 }
 local entryByName: { [string]: Module } = {}
 for _, entry in MODULES do
@@ -144,23 +154,57 @@ if #problems > 0 then
 end
 
 --------------------------------------------------------------------------------
--- 2. Load them and check none is an old copy
+-- 2. Load them and check each holds the right, current code
 --------------------------------------------------------------------------------
 
 local requireModule: any = require -- the modules are found at run time
+local LOAD_TIME = 5 -- correct modules load instantly (everything they wait for exists)
 local loaded: { [string]: any } = {}
-local firstFailure: string? = nil
+local failed: { [string]: boolean } = {}
 for _, entry in MODULES do
-	local ok, result = pcall(requireModule, found[entry.Name])
-	if not ok then
-		local message = tostring(result)
-		if firstFailure and string.find(message, "Requested module experienced an error", 1, true) then
-			-- It uses a module that already failed: that one is the file to fix
-			warn(("%s ✗ %s didn't load because %s failed first (fix that one)."):format(TAG, entry.Name, firstFailure))
-		else
-			firstFailure = firstFailure or entry.Name
-			problem(("%s failed to load: %s. Paste scripts/%s.luau into %s again."):format(entry.Name, message, entry.File, entry.Where))
+	-- A module that uses a broken one can't load either: report only the cause
+	local cause: string? = nil
+	for _, used in entry.Uses do
+		if failed[used] then
+			cause = used
+			break
 		end
+	end
+	if cause then
+		failed[entry.Name] = true
+		warn(("%s ✗ %s didn't load because %s, which it uses, has a problem (fix that one)."):format(TAG, entry.Name, cause))
+		continue
+	end
+	-- Load on a separate thread, so code that waits forever can't stall this one
+	local finished, ok, result = false, false, nil
+	task.spawn(function()
+		ok, result = pcall(requireModule, found[entry.Name])
+		finished = true
+	end)
+	local loadDeadline = os.clock() + LOAD_TIME
+	while not finished and os.clock() < loadDeadline do
+		task.wait()
+	end
+	if not finished then
+		failed[entry.Name] = true
+		problem(("%s is still loading after %d seconds: it waits for something that doesn't exist, so it probably holds another file's code. Paste scripts/%s.luau into %s again."):format(entry.Name, LOAD_TIME, entry.File, entry.Where))
+		continue
+	end
+	if not ok then
+		failed[entry.Name] = true
+		problem(("%s failed to load (its own error is the red line above in Output). Paste scripts/%s.luau into %s again."):format(entry.Name, entry.File, entry.Where))
+		continue
+	end
+	if result == nil then
+		failed[entry.Name] = true
+		problem(("%s doesn't return anything, so the paste was probably cut off. Paste all of scripts/%s.luau into %s again."):format(entry.Name, entry.File, entry.Where))
+		continue
+	end
+	-- Code from another file pasted into this script?
+	local file = if typeof(result) == "table" then result.ScriptFile else nil
+	if typeof(file) == "string" and file ~= entry.File then
+		failed[entry.Name] = true
+		problem(("%s holds the code from scripts/%s.luau. Paste scripts/%s.luau into %s instead."):format(entry.Name, file, entry.File, entry.Where))
 		continue
 	end
 	loaded[entry.Name] = result
@@ -186,7 +230,7 @@ if serverProblem() then
 end
 local remotes = ReplicatedStorage:FindFirstChild("Remotes")
 if not remotes then
-	problem(("The server never started (ReplicatedStorage > Remotes was not created). If Output shows no [Street Hoops] lines from the server, Main isn't running: it must be an enabled Script at %s holding scripts/05_Server_Main.luau."):format(MAIN_WHERE))
+	problem(("The server never started (ReplicatedStorage > Remotes was not created). If Output shows no [Street Hoops] lines from the server, Main isn't running: it must be an enabled Script at %s holding scripts/05_Server_Main.luau. If it shows some, the last one says where Main stopped."):format(MAIN_WHERE))
 	return
 end
 local mainVersion = ReplicatedStorage:GetAttribute("StreetHoopsMainVersion")
@@ -195,13 +239,6 @@ if typeof(mainVersion) ~= "number" or mainVersion < EXPECTED_MAIN_VERSION then
 elseif mainVersion > EXPECTED_MAIN_VERSION then
 	problem(("Main is newer than this ClientMain expects, so ClientMain is the old copy. Paste scripts/13_Client_ClientMain.luau into %s again."):format(CLIENT_MAIN_WHERE))
 end
-task.spawn(function()
-	local hello = remotes:WaitForChild("ClientReady", 5)
-	if hello and hello:IsA("RemoteEvent") then
-		hello:FireServer(CLIENT_MAIN_VERSION)
-	end
-end)
-
 --------------------------------------------------------------------------------
 -- 4. Start the modules. One that errors, or waits for something that never
 --    appears, is reported and the rest still start.

@@ -27,6 +27,7 @@ local RemoteGuard = require(Server:WaitForChild("RemoteGuard"))
 
 local MatchService = {}
 MatchService.ScriptVersion = 2 -- Main/ClientMain compare this to spot an old copy; bump when this file changes
+MatchService.ScriptFile = "10_Server_MatchService" -- and this to spot another file's code pasted here
 
 export type Side = "Home" | "Away"
 export type MatchState = "Idle" | "Countdown" | "Live" | "Dead" | "Check" | "GameOver"

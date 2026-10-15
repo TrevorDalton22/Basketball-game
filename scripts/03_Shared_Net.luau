@@ -8,6 +8,7 @@ local RunService = game:GetService("RunService")
 
 local Net = {}
 Net.ScriptVersion = 3 -- Main/ClientMain compare this to spot an old copy; bump when this file changes
+Net.ScriptFile = "03_Shared_Net" -- and this to spot another file's code pasted here
 
 local EVENTS: { [string]: string } = {
 	-- client → server

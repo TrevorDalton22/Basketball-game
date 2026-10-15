@@ -12,6 +12,7 @@ local BasketballMath = require(Shared:WaitForChild("BasketballMath"))
 
 local CourtBuilder = {}
 CourtBuilder.ScriptVersion = 2 -- Main/ClientMain compare this to spot an old copy; bump when this file changes
+CourtBuilder.ScriptFile = "08_Server_CourtBuilder" -- and this to spot another file's code pasted here
 
 export type CourtHandle = {
 	Id: string,

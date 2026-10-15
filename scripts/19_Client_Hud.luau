@@ -21,6 +21,7 @@ local MatchClient = require(Client:WaitForChild("MatchClient"))
 
 local Hud = {}
 Hud.ScriptVersion = 2 -- Main/ClientMain compare this to spot an old copy; bump when this file changes
+Hud.ScriptFile = "19_Client_Hud" -- and this to spot another file's code pasted here
 
 local THEME = Config.UI
 local player = Players.LocalPlayer

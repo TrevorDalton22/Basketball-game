@@ -14,6 +14,7 @@ local BasketballMath = require(ReplicatedStorage:WaitForChild("Shared"):WaitForC
 
 local MatchClient = {}
 MatchClient.ScriptVersion = 2 -- Main/ClientMain compare this to spot an old copy; bump when this file changes
+MatchClient.ScriptFile = "15_Client_MatchClient" -- and this to spot another file's code pasted here
 
 local player = Players.LocalPlayer
 

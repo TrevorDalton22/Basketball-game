@@ -22,6 +22,7 @@ local CharacterService = require(script.Parent:WaitForChild("CharacterService"))
 
 local BallService = {}
 BallService.ScriptVersion = 2 -- Main/ClientMain compare this to spot an old copy; bump when this file changes
+BallService.ScriptFile = "09_Server_BallService" -- and this to spot another file's code pasted here
 
 export type BallState = "Held" | "Loose" | "InFlight" | "Scored" | "Dead"
 

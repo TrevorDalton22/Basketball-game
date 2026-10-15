@@ -21,6 +21,7 @@ local ShotMeter = require(Client:WaitForChild("ShotMeter"))
 
 local ShootController = {}
 ShootController.ScriptVersion = 3 -- ClientMain compares this to spot an old copy; bump when this file changes
+ShootController.ScriptFile = "17_Client_ShootController" -- and this to spot another file's code pasted here
 
 local SHOT = Config.Shot
 local FINISH = Config.Finish

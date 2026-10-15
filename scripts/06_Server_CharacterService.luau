@@ -14,6 +14,7 @@ local Signal = require(Shared:WaitForChild("Signal"))
 
 local CharacterService = {}
 CharacterService.ScriptVersion = 2 -- Main/ClientMain compare this to spot an old copy; bump when this file changes
+CharacterService.ScriptFile = "06_Server_CharacterService" -- and this to spot another file's code pasted here
 
 local GROUPS = Config.Collision
 local ANTI = Config.AntiCheat

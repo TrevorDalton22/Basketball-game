@@ -5,6 +5,7 @@
 
 local Config = {}
 Config.ScriptVersion = 2 -- Main/ClientMain compare this to spot an old copy; bump when this file changes
+Config.ScriptFile = "01_Shared_Config" -- and this to spot another file's code pasted here
 
 -- Court geometry, in studs. Each court is a half court: the local origin is the
 -- centre of the baseline at floor height, +Z points from the baseline toward

@@ -17,6 +17,7 @@ local MatchClient = require(Client:WaitForChild("MatchClient"))
 
 local BallVisuals = {}
 BallVisuals.ScriptVersion = 2 -- Main/ClientMain compare this to spot an old copy; bump when this file changes
+BallVisuals.ScriptFile = "18_Client_BallVisuals" -- and this to spot another file's code pasted here
 
 local BALL = Config.Ball
 local localPlayer = Players.LocalPlayer

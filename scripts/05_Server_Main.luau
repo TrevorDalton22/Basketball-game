@@ -19,8 +19,8 @@ end
 
 -- This file's version, published first so ClientMain can tell when Main is the
 -- old copy, and the version ClientMain must check in with (see the end)
-local MAIN_VERSION = 3
-local CLIENT_MAIN_VERSION = 3
+local MAIN_VERSION = 4
+local CLIENT_MAIN_VERSION = 4
 ReplicatedStorage:SetAttribute("StreetHoopsMainVersion", MAIN_VERSION)
 
 --------------------------------------------------------------------------------
@@ -209,18 +209,48 @@ print(("%s ✓ All %d scripts found in the right places"):format(TAG, #EXPECTED 
 local Shared = ReplicatedStorage:WaitForChild("Shared")
 local Server = script.Parent
 
+local fileOf: { [string]: string } = {}
+for _, item in EXPECTED do
+	if item.File then
+		fileOf[item.Path[#item.Path]] = item.File
+	end
+end
+
+local LOAD_TIME = 5 -- correct modules load instantly (everything they wait for exists)
 local loaded: { [string]: any } = {}
 local function load(parent: Instance, name: string): boolean
 	local module = parent:FindFirstChild(name)
+	local where = module and module:GetFullName():gsub("%.", " > ") or name
 	-- (dynamic require: the module was located by the setup check above)
 	local requireModule: any = require
-	local ok, result = pcall(function()
-		return requireModule(module)
+	-- Load on a separate thread, so code that waits forever can't stall start-up
+	local finished, ok, result = false, false, nil
+	task.spawn(function()
+		ok, result = pcall(function()
+			return requireModule(module)
+		end)
+		finished = true
 	end)
+	local deadline = os.clock() + LOAD_TIME
+	while not finished and os.clock() < deadline do
+		task.wait()
+	end
+	if not finished then
+		fail(("%s is still loading after %d seconds"):format(name, LOAD_TIME), {
+			("It waits for something that doesn't exist, so it probably holds another file's code. Paste scripts/%s.luau into %s again."):format(fileOf[name] or name, where),
+		})
+		return false
+	end
 	if not ok then
 		fail(("%s failed to load"):format(name), {
 			tostring(result),
-			("Re-copy the code for %s from GitHub and paste it again (Ctrl+A, then Ctrl+V)."):format(name),
+			("Paste scripts/%s.luau into %s again (in the script: Ctrl+A, then Ctrl+V)."):format(fileOf[name] or name, where),
+		})
+		return false
+	end
+	if result == nil then
+		fail(("%s doesn't return anything"):format(name), {
+			("The paste was probably cut off. Paste all of scripts/%s.luau into %s again."):format(fileOf[name] or name, where),
 		})
 		return false
 	end
@@ -247,6 +277,12 @@ local function versionProblems(): { string }
 		local name = item.Path[#item.Path]
 		local module = loaded[name]
 		if item.Version == nil or module == nil then
+			continue
+		end
+		-- Code from another file pasted into this script?
+		local file = if typeof(module) == "table" then module.ScriptFile else nil
+		if typeof(file) == "string" and file ~= item.File then
+			table.insert(found, ("%s holds the code from scripts/%s.luau. Paste scripts/%s.luau into %s instead."):format(name, file, item.File or name, pathText(item.Path)))
 			continue
 		end
 		local actual = if typeof(module) == "table" and typeof(module.ScriptVersion) == "number" then module.ScriptVersion else 1
@@ -319,11 +355,33 @@ end
 -- Anyone who spawned before the map finished building lands on it now
 respawnFallenPlayers(false)
 
--- An old ClientMain can't report itself, so every current one checks in. A
+
+local function step(name: string, fn: (number) -> (), dt: number)
+	local ok, err = pcall(function()
+		fn(dt)
+	end)
+	if not ok then
+		warn(("%s %s.Update error: %s"):format(TAG, name, tostring(err)))
+	end
+end
+
+RunService.Heartbeat:Connect(function(dt)
+	step("CharacterService", CharacterService.Update, dt)
+	step("BallService", BallService.Update, dt)
+	step("MatchService", MatchService.Update, dt)
+	step("QueueService", QueueService.Update, dt)
+end)
+
+print(("%s ✓ Server ready — %d court(s)"):format(TAG, #courts))
+
+-- An old ClientMain can't report itself, so every current one checks in (set
+-- up last, after the game loop, so nothing here can hold the game up). A
 -- player whose client never does is told (in Output and on their screen).
-local CHECK_IN_TIME = 30
+-- Longer on a live server, where a slow phone can take a while to load
+local CHECK_IN_TIME = if RunService:IsStudio() then 30 else 90
 local checkedIn: { [Player]: boolean } = {}
 local clientNotices: { [Player]: ScreenGui } = {}
+local warnedLate: { [Player]: boolean } = {}
 
 local function showClientNotice(player: Player, text: string)
 	warn(("%s ✗ %s: %s"):format(TAG, player.Name, text))
@@ -359,9 +417,12 @@ Net.Event("ClientReady").OnServerEvent:Connect(function(player: Player, version:
 	checkedIn[player] = true
 	local notice = clientNotices[player]
 	if notice then
-		-- It was only slow to start
 		notice:Destroy()
 		clientNotices[player] = nil
+	end
+	if warnedLate[player] then
+		warnedLate[player] = nil
+		print(("%s ✓ %s: ClientMain checked in after all (it was only slow to load), so ignore the ✗ above."):format(TAG, player.Name))
 	end
 	if typeof(version) == "number" and version < CLIENT_MAIN_VERSION then
 		showClientNotice(player, "ClientMain is an old copy. Paste scripts/13_Client_ClientMain.luau into StarterPlayer > StarterPlayerScripts > ClientMain again.")
@@ -371,7 +432,13 @@ end)
 local function watchClient(player: Player)
 	task.delay(CHECK_IN_TIME, function()
 		if player.Parent and not checkedIn[player] then
-			showClientNotice(player, "ClientMain didn't start, or is an old copy. Paste scripts/13_Client_ClientMain.luau into the LocalScript StarterPlayer > StarterPlayerScripts > ClientMain again.")
+			warnedLate[player] = true
+			local clientMain = resolve({ "StarterPlayer", "StarterPlayerScripts", "ClientMain" })
+			if clientMain and clientMain:IsA("LocalScript") and not clientMain.Enabled then
+				showClientNotice(player, "ClientMain is disabled. Select StarterPlayer > StarterPlayerScripts > ClientMain and tick Enabled in Properties.")
+			else
+				showClientNotice(player, "ClientMain didn't start, or is an old copy. Paste scripts/13_Client_ClientMain.luau into the LocalScript StarterPlayer > StarterPlayerScripts > ClientMain again.")
+			end
 		end
 	end)
 end
@@ -382,22 +449,5 @@ end
 Players.PlayerRemoving:Connect(function(player)
 	checkedIn[player] = nil
 	clientNotices[player] = nil
+	warnedLate[player] = nil
 end)
-
-local function step(name: string, fn: (number) -> (), dt: number)
-	local ok, err = pcall(function()
-		fn(dt)
-	end)
-	if not ok then
-		warn(("%s %s.Update error: %s"):format(TAG, name, tostring(err)))
-	end
-end
-
-RunService.Heartbeat:Connect(function(dt)
-	step("CharacterService", CharacterService.Update, dt)
-	step("BallService", BallService.Update, dt)
-	step("MatchService", MatchService.Update, dt)
-	step("QueueService", QueueService.Update, dt)
-end)
-
-print(("%s ✓ Server ready — %d court(s)"):format(TAG, #courts))
