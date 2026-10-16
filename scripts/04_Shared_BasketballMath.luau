@@ -6,6 +6,7 @@
 local Config = require(script.Parent:WaitForChild("Config"))
 
 local BasketballMath = {}
+BasketballMath.ScriptFile = "04_Shared_BasketballMath" -- Main/ClientMain compare this to spot another file's code pasted here
 
 local Court = Config.Court
 

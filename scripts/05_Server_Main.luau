@@ -209,18 +209,42 @@ print(("%s ✓ All %d scripts found in the right places"):format(TAG, #EXPECTED 
 local Shared = ReplicatedStorage:WaitForChild("Shared")
 local Server = script.Parent
 
-local fileOf: { [string]: string } = {}
+local expectedByName: { [string]: Expected } = {}
 for _, item in EXPECTED do
-	if item.File then
-		fileOf[item.Path[#item.Path]] = item.File
-	end
+	expectedByName[item.Path[#item.Path]] = item
 end
 
+-- Does this loaded module hold the right file's code, in the current version?
+-- (An old copy of one file, not re-pasted after an update, is the usual reason
+-- a feature quietly stops working, so name the exact file to paste again.)
+local function moduleProblem(name: string, module: any): string?
+	local item = expectedByName[name]
+	if not item or item.Version == nil then
+		return nil
+	end
+	local file = if typeof(module) == "table" then module.ScriptFile else nil
+	if typeof(file) == "string" and file ~= item.File then
+		return ("%s holds the code from scripts/%s.luau. Paste scripts/%s.luau into %s instead."):format(name, file, item.File or name, pathText(item.Path))
+	end
+	local actual = if typeof(module) == "table" and typeof(module.ScriptVersion) == "number" then module.ScriptVersion else 1
+	if actual < item.Version then
+		return ("%s is an old copy (version %d, needs %d). Paste scripts/%s.luau into %s again."):format(name, actual, item.Version, item.File or name, pathText(item.Path))
+	elseif actual > item.Version then
+		return ("%s is newer than this Main expects, so Main is the old copy. Paste scripts/05_Server_Main.luau into ServerScriptService > Server > Main again."):format(name)
+	end
+	return nil
+end
+
+-- Each module is checked as soon as it loads, so a wrong one is named even when
+-- a module after it then fails because of it
 local LOAD_TIME = 5 -- correct modules load instantly (everything they wait for exists)
 local loaded: { [string]: any } = {}
+local stale: { string } = {}
 local function load(parent: Instance, name: string): boolean
 	local module = parent:FindFirstChild(name)
-	local where = module and module:GetFullName():gsub("%.", " > ") or name
+	local item = expectedByName[name]
+	local file = if item and item.File then item.File else name
+	local where = if item then pathText(item.Path) else name
 	-- (dynamic require: the module was located by the setup check above)
 	local requireModule: any = require
 	-- Load on a separate thread, so code that waits forever can't stall start-up
@@ -235,26 +259,26 @@ local function load(parent: Instance, name: string): boolean
 	while not finished and os.clock() < deadline do
 		task.wait()
 	end
+	local failure: string? = nil
 	if not finished then
-		fail(("%s is still loading after %d seconds"):format(name, LOAD_TIME), {
-			("It waits for something that doesn't exist, so it probably holds another file's code. Paste scripts/%s.luau into %s again."):format(fileOf[name] or name, where),
-		})
-		return false
+		failure = ("%s is still loading after %d seconds: it waits for something that doesn't exist, so it probably holds another file's code. Paste scripts/%s.luau into %s again."):format(name, LOAD_TIME, file, where)
+	elseif not ok then
+		failure = ("%s failed to load: %s. Paste scripts/%s.luau into %s again (in the script: Ctrl+A, then Ctrl+V)."):format(name, tostring(result), file, where)
+	elseif result == nil then
+		failure = ("%s doesn't return anything, so the paste was probably cut off. Paste all of scripts/%s.luau into %s again."):format(name, file, where)
 	end
-	if not ok then
-		fail(("%s failed to load"):format(name), {
-			tostring(result),
-			("Paste scripts/%s.luau into %s again (in the script: Ctrl+A, then Ctrl+V)."):format(fileOf[name] or name, where),
-		})
-		return false
-	end
-	if result == nil then
-		fail(("%s doesn't return anything"):format(name), {
-			("The paste was probably cut off. Paste all of scripts/%s.luau into %s again."):format(fileOf[name] or name, where),
-		})
+	if failure then
+		-- Problems already found in earlier modules are often the cause: list them first
+		local details = table.clone(stale)
+		table.insert(details, failure)
+		fail(("%d script problem(s) found"):format(#details), details)
 		return false
 	end
 	loaded[name] = result
+	local problem = moduleProblem(name, result)
+	if problem then
+		table.insert(stale, problem)
+	end
 	return true
 end
 
@@ -268,35 +292,8 @@ for _, name in { "CharacterService", "RemoteGuard", "CourtBuilder", "BallService
 		return
 	end
 end
-
--- An old copy of one file (not re-pasted after an update) is the usual reason a
--- feature quietly stops working, so name the exact file to paste again
-local function versionProblems(): { string }
-	local found = {}
-	for _, item in EXPECTED do
-		local name = item.Path[#item.Path]
-		local module = loaded[name]
-		if item.Version == nil or module == nil then
-			continue
-		end
-		-- Code from another file pasted into this script?
-		local file = if typeof(module) == "table" then module.ScriptFile else nil
-		if typeof(file) == "string" and file ~= item.File then
-			table.insert(found, ("%s holds the code from scripts/%s.luau. Paste scripts/%s.luau into %s instead."):format(name, file, item.File or name, pathText(item.Path)))
-			continue
-		end
-		local actual = if typeof(module) == "table" and typeof(module.ScriptVersion) == "number" then module.ScriptVersion else 1
-		if actual < item.Version then
-			table.insert(found, ("%s is an old copy (version %d, needs %d). Paste scripts/%s.luau into %s again."):format(name, actual, item.Version, item.File or name, pathText(item.Path)))
-		elseif actual > item.Version then
-			table.insert(found, ("%s is newer than this Main expects, so Main is the old copy. Paste scripts/05_Server_Main.luau into ServerScriptService > Server > Main again."):format(name))
-		end
-	end
-	return found
-end
-local stale = versionProblems()
 if #stale > 0 then
-	fail(("%d script(s) are out of date"):format(#stale), stale)
+	fail(("%d script(s) are out of date or hold the wrong code"):format(#stale), stale)
 	return
 end
 print(("%s ✓ Shared and server scripts are up to date (ClientMain checks the client ones)"):format(TAG))

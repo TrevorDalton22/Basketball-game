@@ -17,6 +17,7 @@ local MatchService = require(Server:WaitForChild("MatchService"))
 local RemoteGuard = require(Server:WaitForChild("RemoteGuard"))
 
 local QueueService = {}
+QueueService.ScriptFile = "11_Server_QueueService" -- Main/ClientMain compare this to spot another file's code pasted here
 
 local QUEUE = Config.Queue
 local SIDES = { "Home", "Away" }

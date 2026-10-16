@@ -12,6 +12,7 @@ export type Signal = {
 }
 
 local Signal = {}
+Signal.ScriptFile = "02_Shared_Signal" -- Main/ClientMain compare this to spot another file's code pasted here
 
 function Signal.new(): Signal
 	local handlers: { [number]: (...any) -> () } = {}

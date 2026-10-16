@@ -8,6 +8,7 @@ local TweenService = game:GetService("TweenService")
 local Config = require(ReplicatedStorage:WaitForChild("Shared"):WaitForChild("Config"))
 
 local UIKit = {}
+UIKit.ScriptFile = "14_Client_UIKit" -- Main/ClientMain compare this to spot another file's code pasted here
 UIKit.Theme = Config.UI
 
 function UIKit.new(className: string, props: { [string]: any }?, children: { any }?): any

@@ -192,7 +192,14 @@ for _, entry in MODULES do
 	end
 	if not ok then
 		failed[entry.Name] = true
-		problem(("%s failed to load (its own error is the red line above in Output). Paste scripts/%s.luau into %s again."):format(entry.Name, entry.File, entry.Where))
+		local message = tostring(result)
+		if string.find(message, "did not return exactly one value", 1, true) then
+			problem(("%s doesn't return anything, so the paste was probably cut off. Paste all of scripts/%s.luau into %s again."):format(entry.Name, entry.File, entry.Where))
+		else
+			-- For an error inside the module, Roblox prints the real one itself
+			local detail = if string.find(message, "Requested module experienced an error", 1, true) then "its own error is the red line above in Output" else message
+			problem(("%s failed to load (%s). Paste scripts/%s.luau into %s again."):format(entry.Name, detail, entry.File, entry.Where))
+		end
 		continue
 	end
 	if result == nil then

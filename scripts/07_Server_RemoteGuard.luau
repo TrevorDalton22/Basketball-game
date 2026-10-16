@@ -9,6 +9,7 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Config = require(ReplicatedStorage:WaitForChild("Shared"):WaitForChild("Config"))
 
 local RemoteGuard = {}
+RemoteGuard.ScriptFile = "07_Server_RemoteGuard" -- Main/ClientMain compare this to spot another file's code pasted here
 
 type Bucket = { Tokens: number, Updated: number }
 local buckets: { [Player]: Bucket } = {}

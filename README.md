@@ -259,7 +259,7 @@ Every gameplay number is in **ReplicatedStorage › Shared › Config**. The mos
 | A **SETUP PROBLEM** sign on a grey floor, or a dark **STREET HOOPS SETUP PROBLEM** box on screen | Read the numbered lines and fix each one (usually: paste one script again). |
 | Pressing **E** does nothing at all | A script was missed in the last update. Press Play and look for the **SETUP PROBLEM** box or `✗` lines in Output; they name the file to paste again. |
 | `… failed to load`, `… is still loading after 5 seconds`, or `… holds the code from scripts/…` | That script's code is incomplete or from another file. Paste the named file into it again (Ctrl+A in the script, then Ctrl+V). For a load error, the red line just above in Output is the script's own error. |
-| No HUD or meter (but the map is there) | `ClientMain` is disabled or is an old copy. After 30 seconds the server says which on screen (*"ClientMain is disabled…"* or *"ClientMain didn't start, or is an old copy…"*). If `ClientMain` isn't a LocalScript, or modules 14–19 and 21 aren't its direct children, the setup check catches it instead and you get the SETUP PROBLEM sign. |
+| No HUD or meter (but the map is there) | `ClientMain` is disabled or is an old copy. After 30 seconds in Studio (90 on a live server) the server says which on screen (*"ClientMain is disabled…"* or *"ClientMain didn't start, or is an old copy…"*). If `ClientMain` isn't a LocalScript, or modules 14–19 and 21 aren't its direct children, the setup check catches it instead and you get the SETUP PROBLEM sign. |
 | Warning about `Baseplate` / `SpawnLocation` | Delete them (Step 2). |
 
 If you see a red error, copy it from the Output window and send it to me, including the script name and line number.

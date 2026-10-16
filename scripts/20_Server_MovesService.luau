@@ -18,6 +18,7 @@ local MatchService = require(Server:WaitForChild("MatchService"))
 local RemoteGuard = require(Server:WaitForChild("RemoteGuard"))
 
 local MovesService = {}
+MovesService.ScriptFile = "20_Server_MovesService" -- Main/ClientMain compare this to spot another file's code pasted here
 
 local DEFENSE = Config.Defense
 local MOVES = Config.Moves

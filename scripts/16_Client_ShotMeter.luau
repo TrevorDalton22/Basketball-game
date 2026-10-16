@@ -12,6 +12,7 @@ local Net = require(Shared:WaitForChild("Net"))
 local UIKit = require(script.Parent:WaitForChild("UIKit"))
 
 local ShotMeter = {}
+ShotMeter.ScriptFile = "16_Client_ShotMeter" -- Main/ClientMain compare this to spot another file's code pasted here
 
 local SHOT = Config.Shot
 local THEME = Config.UI
