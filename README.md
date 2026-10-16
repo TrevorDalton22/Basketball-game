@@ -176,7 +176,7 @@ Click **File → Save to Roblox** (Ctrl+S).
 Stats are saved with Roblox DataStores, which only work in a place that is on Roblox and allowed to use them. This is a one-time setup:
 
 1. **File → Publish to Roblox** (if you haven't already). It can stay private.
-2. Open **Game Settings** (on the **Home** tab; newer Studio calls it **Experience Settings**) → **Security**, turn on **Enable Studio Access to API Services**, and click **Save**.
+2. Open **File → Experience Settings** (older Studio: **Home → Game Settings**) → **Security**, turn on **Enable Studio Access to API Services**, and click **Save**.
 3. Press **Play**. Output should **not** show *"⚠ Player stats won't be saved"*.
 
 Skipping this is fine for trying the game: stats still count for the session, and both Output and a message on screen say they aren't being saved.
@@ -215,7 +215,7 @@ Skipping this is fine for trying the game: stats still count for the session, an
    - [ ] Stepping out of bounds with the ball, or letting it roll out, is a turnover.
    - [ ] First to 15 wins. Lower `TargetScore` in `Config` to test faster. The results screen appears, then both players return to the lobby.
    - [ ] **Progression:** the results screen shows *"+N coins · Record W–L · N coins total"*, and the player list (top right) shows each player's **Wins** and **Coins**. Leaving within the first 45 seconds of game clock shows *"Matches that end in the first 45 seconds don't count"* instead.
-   - [ ] **Saving** (after Step 7): Stop, press Play again, and the Wins and Coins in the player list are still there.
+   - [ ] **Saving** (after Step 7): click **Cleanup**, then **Start** the same 2-player test again. Player1's and Player2's Wins and Coins in the player list are still there. (Studio's test players always get the same IDs. A solo **Play** uses your own account, which has its own separate stats, so it starts at 0.)
    - [ ] **Reset** a character (Esc → Reset): that's a turnover, and play waits for them to respawn. A shot already in the air still counts. The 4th reset in a match forfeits it.
    - [ ] Press **LEAVE MATCH** twice: that's a forfeit, and the other player sees **VICTORY · Opponent forfeited**.
    - [ ] Close Player2's window mid-match: Player1 wins by forfeit.
@@ -282,7 +282,9 @@ Every gameplay number is in **ReplicatedStorage › Shared › Config**. The mos
 | No HUD or meter (but the map is there) | `ClientMain` is disabled or is an old copy. After 30 seconds in Studio (90 on a live server) the server says which on screen (*"ClientMain is disabled…"* or *"ClientMain didn't start, or is an old copy…"*). If `ClientMain` isn't a LocalScript, or modules 14–19 and 21 aren't its direct children, the setup check catches it instead and you get the SETUP PROBLEM sign. |
 | Warning about `Baseplate` / `SpawnLocation` | Delete them (Step 2). |
 | `⚠ Player stats won't be saved on this server` | Do Step 7 (publish, then turn on Studio Access to API Services). Stats still count until you press Stop. |
-| `⚠ Couldn't load …'s stats` or `Couldn't save …` | Roblox's DataStores are having trouble. It retries by itself; that player's stats for this session may not be saved. |
+| `⚠ Couldn't load …'s stats yet … Still trying` | Roblox's DataStores are having trouble. It keeps trying while that player is in the server, and anything they earn meanwhile is added once it loads. Only if it still fails after 10 minutes does it say *won't be saved*; then rejoining loads them normally. |
+| `⚠ Couldn't save …'s stats; will try again` | Roblox's DataStores are having trouble. It tries again at the next autosave, and a player's last save when they leave keeps retrying until it works. |
+| `Waiting up to 30 s for another server to finish saving …` | That player just came from another server that is still saving their data. It waits for it (up to 30 s), so nothing is overwritten. |
 
 If you see a red error, copy it from the Output window and send it to me, including the script name and line number.
 

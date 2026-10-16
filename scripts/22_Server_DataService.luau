@@ -15,7 +15,7 @@ local Config = require(Shared:WaitForChild("Config"))
 local Signal = require(Shared:WaitForChild("Signal"))
 
 local DataService = {}
-DataService.ScriptVersion = 1 -- Main compares this to spot an old copy; bump when this file changes
+DataService.ScriptVersion = 2 -- Main compares this to spot an old copy; bump when this file changes
 DataService.ScriptFile = "22_Server_DataService" -- and this to spot another file's code pasted here
 
 local TAG = "[Street Hoops]"
@@ -48,7 +48,9 @@ DataService.Changed = Signal.new()
 local profiles: { [Player]: Profile } = {}
 local store: DataStore? = nil
 local available = true -- false once we know this server can't use DataStores
-local inFlight = 0 -- saves still running (shutdown waits for them)
+local inFlight = 0 -- loads and saves still running (shutdown waits for them)
+local closing = false -- the server is shutting down
+local LOAD_GIVE_UP = 600 -- keep retrying a failed load this long before the session is "not saved"
 local rng = Random.new()
 
 --------------------------------------------------------------------------------
@@ -61,7 +63,7 @@ local function unavailable(message: string)
 	end
 	available = false
 	warn(("%s ⚠ Player stats won't be saved on this server: %s"):format(TAG, message))
-	warn(("%s   In Studio: publish the place (File > Publish to Roblox), then Home > Game Settings > Security and turn on 'Enable Studio Access to API Services'. Press Play again. Stats still count for this session."):format(TAG))
+	warn(("%s   In Studio: publish the place (File > Publish to Roblox), then open File > Experience Settings (older Studio: Home > Game Settings) > Security, turn on 'Enable Studio Access to API Services' and click Save. Press Play again. Stats still count for this session."):format(TAG))
 end
 
 -- Errors that mean "DataStores can't be used here at all", not "try again"
@@ -183,13 +185,17 @@ local function save(profile: Profile, release: boolean): boolean
 	profile.Dirty = false
 	local snapshot = table.clone(profile.Stats)
 	local lost = false
+	local wroteRelease = false
 	local ok = update(profile.Key, function(old)
 		local session = lockOf(old)
 		if session ~= profile.Session then
-			lost = true -- another server took over this player's data
+			-- No lock after we sent a release: that earlier try landed even though
+			-- it reported an error. Anything else: another server took over.
+			lost = not (release and wroteRelease and session == nil)
 			return nil
 		end
 		lost = false
+		wroteRelease = release
 		return makeRecord(old, snapshot, if release then nil else { Session = profile.Session, Time = os.time() })
 	end)
 	profile.Saving = false
@@ -209,13 +215,41 @@ local function save(profile: Profile, release: boolean): boolean
 	return ok
 end
 
+-- Final save that hands the data back. Keeps trying (a DataStore hiccup must
+-- not lose the last match) until it works, another server takes over, or
+-- saving turns out to be impossible. Then the profile is forgotten.
+local function release(profile: Profile)
+	inFlight += 1
+	local done = save(profile, true)
+	while not done and profile.Status == "Saved" and available do
+		task.wait(if closing then 1 else 10)
+		done = save(profile, true)
+	end
+	inFlight -= 1
+	if profiles[profile.Player] == profile then
+		profiles[profile.Player] = nil
+	end
+end
+
+-- Wait, but stop early if the player leaves or the server starts closing
+local function pause(profile: Profile, seconds: number)
+	local deadline = os.clock() + seconds
+	while os.clock() < deadline and not profile.Released and profile.Player.Parent do
+		task.wait(0.25)
+	end
+end
+
 local function load(profile: Profile)
+	inFlight += 1
 	local started = os.clock()
+	local lockSeenAt: number? = nil -- when another server's lock was first seen
+	local retryWait = 10
+	local warnedSlow = false
 	local claimed: { [string]: any }? = nil
-	while true do
+	while not profile.Released and profile.Player.Parent do
 		local lockedElsewhere = false
 		-- After a while, take over anyway: the other server has had its chance
-		local takeOver = os.clock() - started >= PROGRESSION.LockWaitTime
+		local takeOver = lockSeenAt ~= nil and os.clock() - lockSeenAt >= PROGRESSION.LockWaitTime
 		local result: { [string]: any }? = nil
 		local ok = update(profile.Key, function(old)
 			local session, lockTime = lockOf(old)
@@ -229,17 +263,33 @@ local function load(profile: Profile)
 			result = stats
 			return makeRecord(old, stats, { Session = profile.Session, Time = os.time() })
 		end)
-		if not ok then
-			break -- DataStores unavailable, or every attempt failed
-		end
-		if not lockedElsewhere then
+		if ok and not lockedElsewhere then
 			claimed = result
 			break
 		end
-		if not profile.Player.Parent then
-			break -- left while we waited
+		if not available then
+			break -- DataStores can't be used here: session only
 		end
-		task.wait(5)
+		if ok then
+			-- Another server still has it (usually it's finishing their last save)
+			if not lockSeenAt then
+				lockSeenAt = os.clock()
+				warn(("%s Waiting up to %d s for another server to finish saving %s's stats."):format(TAG, PROGRESSION.LockWaitTime, profile.Player.Name))
+			end
+			pause(profile, 5)
+		else
+			-- Every attempt failed: keep trying while they're here. Whatever they
+			-- earn meanwhile is added once it loads.
+			if os.clock() - started >= LOAD_GIVE_UP then
+				break
+			end
+			if not warnedSlow then
+				warnedSlow = true
+				warn(("%s ⚠ Couldn't load %s's stats yet (DataStore problem). Still trying; what they earn meanwhile is added once it loads."):format(TAG, profile.Player.Name))
+			end
+			pause(profile, retryWait)
+			retryWait = math.min(retryWait * 2, 60)
+		end
 	end
 
 	if claimed then
@@ -252,23 +302,24 @@ local function load(profile: Profile)
 		profile.Status = "Saved"
 	else
 		profile.Status = "SessionOnly"
-		if available and profile.Player.Parent then
-			warn(("%s ⚠ Couldn't load %s's stats (DataStore problem). They count for this session but won't be saved."):format(TAG, profile.Player.Name))
+		if available and profile.Player.Parent and not profile.Released then
+			warn(("%s ⚠ Couldn't load %s's stats after %d minutes of trying (DataStore problem). They count for this session but won't be saved; rejoining loads them normally."):format(TAG, profile.Player.Name, LOAD_GIVE_UP // 60))
 		end
 	end
 	table.clear(profile.Pending)
 
 	if profile.Released or not profile.Player.Parent then
-		-- They left while loading: hand the data straight back
+		-- They left (or the server is closing) while loading: hand the data straight back
 		profile.Released = true
 		if claimed then
-			save(profile, true)
-		end
-		if profiles[profile.Player] == profile then
+			release(profile)
+		elseif profiles[profile.Player] == profile then
 			profiles[profile.Player] = nil
 		end
+		inFlight -= 1
 		return
 	end
+	inFlight -= 1
 	DataService.Changed:Fire(profile.Player)
 end
 
@@ -306,12 +357,9 @@ local function onPlayerRemoving(player: Player)
 		end
 		profile.Released = true
 		if profile.Status == "Loading" then
-			return -- load() hands the data back when it finishes
+			return -- load() stops and hands back anything it claimed
 		end
-		save(profile, true)
-		if profiles[player] == profile then
-			profiles[player] = nil
-		end
+		release(profile)
 	end)
 end
 
@@ -339,10 +387,13 @@ function DataService.Init()
 	end)
 
 	game:BindToClose(function()
+		closing = true
 		for _, profile in profiles do
-			if profile.Status == "Saved" and not profile.Released then
+			if not profile.Released then
 				profile.Released = true
-				task.spawn(save, profile, true)
+				if profile.Status == "Saved" then
+					task.spawn(release, profile)
+				end -- still loading: load() stops and hands back anything it claimed
 			end
 		end
 		local deadline = os.clock() + PROGRESSION.ShutdownSaveTime
