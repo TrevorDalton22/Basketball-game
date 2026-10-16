@@ -4,7 +4,7 @@
 -- but only the server's copy is ever trusted for gameplay decisions.
 
 local Config = {}
-Config.ScriptVersion = 2 -- Main/ClientMain compare this to spot an old copy; bump when this file changes
+Config.ScriptVersion = 3 -- Main/ClientMain compare this to spot an old copy; bump when this file changes
 Config.ScriptFile = "01_Shared_Config" -- and this to spot another file's code pasted here
 
 -- Court geometry, in studs. Each court is a half court: the local origin is the
@@ -206,6 +206,21 @@ Config.Moves = {
 
 Config.Players = {
 	RespawnTime = 2, -- seconds (Roblox default is 5)
+}
+
+Config.Progression = {
+	-- Coins for a match that counts, plus PerPoint for every point you scored
+	-- (up to MaxPointCoins). Practice never counts.
+	Rewards = { Win = 30, Loss = 10, Draw = 15, PerPoint = 1, MaxPointCoins = 20 },
+	-- A forfeit or cancel before this much game clock has run counts for
+	-- nobody (stops two accounts farming wins by quitting straight away)
+	MinPlayedSeconds = 45,
+	-- Saving (DataStoreService)
+	StoreName = "StreetHoops_PlayerData_v1", -- changing it starts everyone from zero
+	AutosaveInterval = 120, -- seconds between saves while playing
+	LockWaitTime = 30, -- how long to wait for another server to let go of a player's data
+	MaxAttempts = 5, -- tries per load/save before giving up (waits 1, 2, 4, 8 s between)
+	ShutdownSaveTime = 25, -- seconds the server waits for saves when it shuts down
 }
 
 Config.AntiCheat = {

@@ -26,7 +26,7 @@ local CharacterService = require(Server:WaitForChild("CharacterService"))
 local RemoteGuard = require(Server:WaitForChild("RemoteGuard"))
 
 local MatchService = {}
-MatchService.ScriptVersion = 2 -- Main/ClientMain compare this to spot an old copy; bump when this file changes
+MatchService.ScriptVersion = 3 -- Main/ClientMain compare this to spot an old copy; bump when this file changes
 MatchService.ScriptFile = "10_Server_MatchService" -- and this to spot another file's code pasted here
 
 export type Side = "Home" | "Away"
@@ -42,6 +42,9 @@ export type MatchResult = {
 	HomeScore: number,
 	AwayScore: number,
 	Reason: string, -- "Score" | "Time" | "Overtime" | "Forfeit" | "Draw" | "Cancelled"
+	Home: Player?, -- still set when that player just left the game
+	Away: Player?,
+	Played: number, -- seconds of game clock that ran (overtime counts as the full clock)
 }
 
 export type CourtState = {
@@ -72,7 +75,7 @@ export type CourtState = {
 	ResultReason: string,
 }
 
--- Fires (result: MatchResult) when a match ends. Progression hooks in here (Phase 5).
+-- Fires (result: MatchResult) when a match ends. ProgressionService hooks in here.
 MatchService.MatchEnded = Signal.new()
 
 local MATCH = Config.Match
@@ -353,6 +356,9 @@ local function endMatch(cs: CourtState, winner: Player?, reason: string)
 		HomeScore = cs.Scores.Home,
 		AwayScore = cs.Scores.Away,
 		Reason = reason,
+		Home = cs.Home,
+		Away = cs.Away,
+		Played = if cs.Overtime then MATCH.Duration else math.max(0, MATCH.Duration - cs.ClockRemaining),
 	}
 	tell(cs, "MatchEnded", {
 		WinnerUserId = cs.WinnerUserId,

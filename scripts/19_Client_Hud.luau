@@ -20,7 +20,7 @@ local UIKit = require(Client:WaitForChild("UIKit"))
 local MatchClient = require(Client:WaitForChild("MatchClient"))
 
 local Hud = {}
-Hud.ScriptVersion = 2 -- Main/ClientMain compare this to spot an old copy; bump when this file changes
+Hud.ScriptVersion = 3 -- Main/ClientMain compare this to spot an old copy; bump when this file changes
 Hud.ScriptFile = "19_Client_Hud" -- and this to spot another file's code pasted here
 
 local THEME = Config.UI
@@ -58,6 +58,8 @@ local results: Frame
 local resultsTitle: TextLabel
 local resultsScore: TextLabel
 local resultsReason: TextLabel
+local resultsRewards: TextLabel
+local rewardsText = "" -- what the last finished match earned (from the server's "Rewards")
 local hint: TextLabel
 
 local lastState: string? = nil
@@ -367,7 +369,7 @@ local function build()
 		Name = "Results",
 		AnchorPoint = Vector2.new(0.5, 0.5),
 		Position = UDim2.fromScale(0.5, 0.45),
-		Size = UDim2.fromOffset(460, 230),
+		Size = UDim2.fromOffset(460, 262),
 		Visible = false,
 		Parent = root,
 	})
@@ -392,8 +394,16 @@ local function build()
 		Parent = results,
 	})
 	readable(resultsReason, 14, 20)
+	resultsRewards = UIKit.text({
+		Position = UDim2.fromOffset(20, 190),
+		Size = UDim2.new(1, -40, 0, 26),
+		TextColor3 = THEME.Perfect,
+		Font = THEME.Font,
+		Parent = results,
+	})
+	readable(resultsRewards, 14, 22)
 	UIKit.text({
-		Position = UDim2.fromOffset(20, 192),
+		Position = UDim2.fromOffset(20, 226),
 		Size = UDim2.new(1, -40, 0, 18),
 		TextColor3 = THEME.TextDim,
 		Font = THEME.FontBody,
@@ -440,7 +450,7 @@ local function layoutForDevice()
 	maxToasts = if toastY + 126 * scale > hintTop then 2 else 3
 	-- Results panel sits below the scoreboard (which stays visible at game over)
 	local resultsTop = 66 + (68 + 6) * scale + 6
-	results.Position = UDim2.new(0.5, 0, 0, math.max(0.45 * viewport.Y, resultsTop + 115 * scale))
+	results.Position = UDim2.new(0.5, 0, 0, math.max(0.45 * viewport.Y, resultsTop + 131 * scale))
 	if touch then
 		-- Bottom-left is the thumbstick on phones; keep the hint between the sticks
 		hint.AnchorPoint = Vector2.new(0.5, 1)
@@ -662,8 +672,10 @@ local function refresh()
 		else
 			resultsReason.Text = REASON_TEXT[reason] or reason
 		end
+		resultsRewards.Text = rewardsText
 	else
 		results.Visible = false
+		rewardsText = ""
 	end
 
 	-- Banners driven by state changes (and by the dead-ball message, which can
@@ -852,6 +864,20 @@ local function onFeedback(kind: string, data: any)
 		if typeof(data.Reason) == "string" and data.Reason ~= "" then
 			Hud.Toast(data.Reason, THEME.Bad, 2)
 		end
+	elseif kind == "Rewards" then
+		-- Decided by the server; we only show it
+		if data.Counted == true then
+			local coins = tonumber(data.Coins) or 0
+			local wins, losses, draws = tonumber(data.Wins) or 0, tonumber(data.Losses) or 0, tonumber(data.Draws) or 0
+			local record = if draws > 0 then ("%d–%d–%d"):format(wins, losses, draws) else ("%d–%d"):format(wins, losses)
+			rewardsText = ("+%d coins  ·  Record %s  ·  %d coins total%s"):format(coins, record, tonumber(data.TotalCoins) or 0, if data.Saved == false then "  (not saved)" else "")
+			if coins > 0 then
+				Hud.Toast(("+%d coins"):format(coins), THEME.Perfect, 2)
+			end
+		else
+			rewardsText = if typeof(data.Note) == "string" then data.Note else ""
+		end
+		refresh()
 	elseif kind == "Notice" then
 		if typeof(data.Text) == "string" then
 			Hud.Toast(data.Text, THEME.TextDim, 2.5)

@@ -22,7 +22,7 @@ This is a standalone project. It isn't connected to any other game.
 
 ## What's in this version
 
-**Phase 5, step 2: layups and dunks** (after step 1, 1v1 defense), built on the Phase 3 prototype
+**Phase 5, step 3: progression** (after 1v1 defense and layups/dunks), built on the Phase 3 prototype
 
 - **Street park:** grass, a concrete plaza, trees, benches, floodlights, a STREET HOOPS entrance arch and a sunset lighting setup. It's all built by script when the server starts.
 - **One 1v1 half court:** painted floor, key, three-point line with corners, a glass backboard, a physical rim (the ball can bounce off it), a net, a fence and a live status sign.
@@ -42,6 +42,7 @@ This is a standalone project. It isn't connected to any other game.
   - **Out of bounds:** a ball or ball carrier that goes out is a turnover.
   - **Results screen:** shown at the end, then both players go back to the lobby.
 - **Leaving and resetting:** leaving the game or pressing **LEAVE MATCH** twice forfeits. Resetting your character is a turnover, and play waits up to 15 seconds for you to respawn. A shot already in the air still lands and counts. Resetting more than 3 times in one match forfeits it.
+- **Progression, saved between sessions:** every match that counts adds to your **wins**, **losses**, **draws**, **games played**, **points scored** and **coins**. A win earns 30 coins, a draw 15 and a loss 10, plus 1 coin per point you scored (up to 20 more). The results screen shows what you earned and your record, and the Roblox player list shows everyone's **Wins** and **Coins**. Practice never counts. Leaving a match counts as a loss with no coins, but a match that ends in its first 45 seconds of game clock (a forfeit or cancel) counts for nobody. Saving needs Step 7 below; until then stats count for the session only, and the game tells you so.
 - **No shots from behind or right beside the backboard:** the glass is in the way, so the shot is refused and a message says why.
 - **Practice mode:** when a court has no match, anyone can shoot around with its ball. No points count.
 - **HUD:** scoreboard with a possession dot, shot clock, shot meter, queue panel, banners, toasts, results and context hints. Works on **PC, phone and controller**.
@@ -66,7 +67,7 @@ Progression (wins, losses, points and currency saved with DataStores) and more c
 
 ## Build it in Roblox Studio from scratch
 
-This takes about 15 minutes. You create **2 folders and 21 scripts** and paste the code from the [`scripts/`](scripts) folder into each one. Rojo and plugins aren't needed.
+This takes about 15 minutes. You create **2 folders and 23 scripts** and paste the code from the [`scripts/`](scripts) folder into each one. Rojo and plugins aren't needed.
 
 ### Step 1: Create a new, empty place
 
@@ -117,6 +118,8 @@ How to add an object: hover over the parent in the Explorer, click **⊕**, and 
 | 19 | StarterPlayer › StarterPlayerScripts › **ClientMain** | `Hud` | ModuleScript | [`19_Client_Hud.luau`](scripts/19_Client_Hud.luau) |
 | 20 | ServerScriptService › Server | `MovesService` | ModuleScript | [`20_Server_MovesService.luau`](scripts/20_Server_MovesService.luau) |
 | 21 | StarterPlayer › StarterPlayerScripts › **ClientMain** | `MovesController` | ModuleScript | [`21_Client_MovesController.luau`](scripts/21_Client_MovesController.luau) |
+| 22 | ServerScriptService › Server | `DataService` | ModuleScript | [`22_Server_DataService.luau`](scripts/22_Server_DataService.luau) |
+| 23 | ServerScriptService › Server | `ProgressionService` | ModuleScript | [`23_Server_ProgressionService.luau`](scripts/23_Server_ProgressionService.luau) |
 
 ⚠️ Scripts **14–19 and 21 go inside the `ClientMain` LocalScript**. Hover over `ClientMain` itself and click ⊕. Don't add them to StarterPlayerScripts.
 
@@ -134,9 +137,11 @@ ServerScriptService
    ├─ BallService
    ├─ CharacterService
    ├─ CourtBuilder
+   ├─ DataService
    ├─ Main            ← Script
    ├─ MatchService
    ├─ MovesService
+   ├─ ProgressionService
    ├─ QueueService
    ├─ RemoteGuard
    └─ ShotService
@@ -165,6 +170,16 @@ Check each paste: line 2 of every file says where it belongs, for example:
 ### Step 6: Save
 
 Click **File → Save to Roblox** (Ctrl+S).
+
+### Step 7: Turn on saving (DataStores)
+
+Stats are saved with Roblox DataStores, which only work in a place that is on Roblox and allowed to use them. This is a one-time setup:
+
+1. **File → Publish to Roblox** (if you haven't already). It can stay private.
+2. Open **Game Settings** (on the **Home** tab; newer Studio calls it **Experience Settings**) → **Security**, turn on **Enable Studio Access to API Services**, and click **Save**.
+3. Press **Play**. Output should **not** show *"⚠ Player stats won't be saved"*.
+
+Skipping this is fine for trying the game: stats still count for the session, and both Output and a message on screen say they aren't being saved.
 
 ---
 
@@ -199,6 +214,8 @@ Click **File → Save to Roblox** (Ctrl+S).
    - [ ] Keeping possession for 20 seconds without hitting the rim gives the ball to the opponent (**SHOT CLOCK**).
    - [ ] Stepping out of bounds with the ball, or letting it roll out, is a turnover.
    - [ ] First to 15 wins. Lower `TargetScore` in `Config` to test faster. The results screen appears, then both players return to the lobby.
+   - [ ] **Progression:** the results screen shows *"+N coins · Record W–L · N coins total"*, and the player list (top right) shows each player's **Wins** and **Coins**. Leaving within the first 45 seconds of game clock shows *"Matches that end in the first 45 seconds don't count"* instead.
+   - [ ] **Saving** (after Step 7): Stop, press Play again, and the Wins and Coins in the player list are still there.
    - [ ] **Reset** a character (Esc → Reset): that's a turnover, and play waits for them to respawn. A shot already in the air still counts. The 4th reset in a match forfeits it.
    - [ ] Press **LEAVE MATCH** twice: that's a forfeit, and the other player sees **VICTORY · Opponent forfeited**.
    - [ ] Close Player2's window mid-match: Player1 wins by forfeit.
@@ -238,12 +255,15 @@ Every gameplay number is in **ReplicatedStorage › Shared › Config**. The mos
 | `Defense.StealCooldown` | 1.4 | Seconds between steal attempts |
 | `Defense.BlockRange` / `BlockChance` | 6.5 / 0.8 | How close a jumping defender must be, and how often it blocks |
 | `Moves.CrossoverCooldown` / `CrossoverImmunity` | 1.1 / 0.45 | Crossover spacing and its steal-proof window |
+| `Progression.Rewards` | Win 30 / Loss 10 / Draw 15, +1 per point (max 20) | Coins for a match that counts |
+| `Progression.MinPlayedSeconds` | 45 | A forfeit or cancel before this much game clock counts for nobody |
+| `Progression.StoreName` | `StreetHoops_PlayerData_v1` | DataStore name. Changing it starts everyone from zero |
 
 ## Troubleshooting
 
-**First, read the Output window** (View → Output) right after you press Play. When the server starts, `Main` checks that all 21 scripts are in the right places and that the shared and server scripts aren't old copies. Then `ClientMain` checks the client scripts (and checks that `Main` is current). You'll see one of these:
+**First, read the Output window** (View → Output) right after you press Play. When the server starts, `Main` checks that all 23 scripts are in the right places and that the shared and server scripts aren't old copies. Then `ClientMain` checks the client scripts (and checks that `Main` is current). You'll see one of these:
 
-- `[Street Hoops] ✓ All 21 scripts found…`, `✓ Shared and server scripts are up to date…`, `✓ Server ready`, and then `✓ Client ready`: everything loaded.
+- `[Street Hoops] ✓ All 23 scripts found…`, `✓ Shared and server scripts are up to date…`, `✓ Server ready`, and then `✓ Client ready`: everything loaded.
 - `[Street Hoops] ✗ … setup problem(s) found`, followed by a numbered list. Each line says exactly what's wrong, for example *"Config is not where it should be. Found: Workspace.Config. Move it to ReplicatedStorage > Shared > Config"*. A grey floor and a red **SETUP PROBLEM** sign also appear in the game, so you don't fall forever. Fix each item and press Play again.
 - `[Street Hoops] ✗ … script(s) are out of date` (from `Main`), or `[Street Hoops] ✗ <Name> is an old copy …` (from `ClientMain`): you updated some scripts but missed one. Each line names the file, for example *"ShotService is an old copy (version 2, needs 3). Paste scripts/12_Server_ShotService.luau into ServerScriptService > Server > ShotService again."* If it says *Main is an old copy* or *ClientMain is the old copy*, paste that one again (05 or 13).
 - Problems also appear **on screen** in a dark **STREET HOOPS SETUP PROBLEM** box at the top. (If `ClientMain` itself can't run, because it's missing or isn't a LocalScript, you get the grey floor and sign instead, and the numbered details are in Output.)
@@ -261,6 +281,8 @@ Every gameplay number is in **ReplicatedStorage › Shared › Config**. The mos
 | `… failed to load`, `… is still loading after 5 seconds`, or `… holds the code from scripts/…` | That script's code is incomplete or from another file. Paste the named file into it again (Ctrl+A in the script, then Ctrl+V). For a load error, the red line just above in Output is the script's own error. |
 | No HUD or meter (but the map is there) | `ClientMain` is disabled or is an old copy. After 30 seconds in Studio (90 on a live server) the server says which on screen (*"ClientMain is disabled…"* or *"ClientMain didn't start, or is an old copy…"*). If `ClientMain` isn't a LocalScript, or modules 14–19 and 21 aren't its direct children, the setup check catches it instead and you get the SETUP PROBLEM sign. |
 | Warning about `Baseplate` / `SpawnLocation` | Delete them (Step 2). |
+| `⚠ Player stats won't be saved on this server` | Do Step 7 (publish, then turn on Studio Access to API Services). Stats still count until you press Stop. |
+| `⚠ Couldn't load …'s stats` or `Couldn't save …` | Roblox's DataStores are having trouble. It retries by itself; that player's stats for this session may not be saved. |
 
 If you see a red error, copy it from the Output window and send it to me, including the script name and line number.
 
@@ -279,6 +301,8 @@ If you see a red error, copy it from the Output window and send it to me, includ
 | Points | Server (`MatchService`) | Counted from a server-detected basket, once per shot, only for that match's shooter. |
 | Clock, shot clock, winner | Server (`MatchService`) | Published as attributes on the court model. |
 | Queue | Server (`QueueService`) | Checked by standing on the pad. |
+| Wins, losses, points, coins | Server (`ProgressionService`) | Worked out from the match result. The client is only told what it earned. |
+| Saved stats | Server (`DataService`) | Each player's data is locked to one server at a time, so a quick rejoin elsewhere can't overwrite newer progress. Data that fails to load is never saved over. |
 
 **Ball states:** `Held` → `InFlight` (shot) → `Scored` or `Loose` (rebound) → `Held`. A `Dead` ball can't be picked up (out of bounds, pauses). A shot the server has decided is a make passes cleanly through the hoop's collision group. A decided miss is aimed outside the rim tube, so it bounces away naturally.
 
@@ -309,6 +333,8 @@ If you see a red error, copy it from the Output window and send it to me, includ
 | Hud | Scoreboard, banners, toasts, queue panel, results, hints |
 | MovesService | Validates steals and crossovers (blocks are checked in ShotService at release) |
 | MovesController | Steal and crossover input on keyboard, controller and touch |
+| DataService | Loads and saves each player's stats with DataStores: one server at a time per player, retries, autosave every 2 minutes, saves on leave and on shutdown |
+| ProgressionService | Turns finished matches into wins, losses, points and coins (decided on the server); shows them in the player list and on the results screen |
 
 ---
 
@@ -318,9 +344,9 @@ Each step is added on its own and tested before the next one starts:
 
 1. ~~Phase 3/4: playable prototype, tested in Studio~~ ✓
 2. ~~Defense: steals, blocks, and crossovers to beat them~~ ✓
-3. ~~Layups and dunks: context finishes near the rim~~ ✓ *(this version)*
-4. **Progression:** wins, losses, total points and currency saved with DataStoreService, with retries and safe error handling *(next)*
-5. **More courts:** add entries to `Config.Courts`
+3. ~~Layups and dunks: context finishes near the rim~~ ✓
+4. ~~Progression: wins, losses, total points and coins saved with DataStoreService, with retries and safe error handling~~ ✓ *(this version)*
+5. **More courts:** add entries to `Config.Courts` *(next)*
 6. **Animations:** dribble, shot and dunk animations, made in the Animation Editor and uploaded by you
 7. **Cosmetics:** ball skins, outfits, court effects and emotes, unlocked with currency
 
