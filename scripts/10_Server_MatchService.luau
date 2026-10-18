@@ -768,8 +768,8 @@ local function sweepIntruders(cs: CourtState)
 		local root = CharacterService.GetRoot(player)
 		if root and BasketballMath.IsInBounds(origin, root.Position, COURT.Runoff) and root.Position.Y < origin.Position.Y + 20 then
 			local own = playerCourt[player]
-			if own and own ~= cs then
-				-- In a match somewhere else: back to their own court's sideline
+			if own and own ~= cs and own.State ~= "GameOver" then
+				-- In a match somewhere else that's still being played: back to their own court's sideline
 				CharacterService.Teleport(player, spotCFrame(own, Vector3.new(COURT.Width / 2 + 2, 0, COURT.Length / 2), Vector3.new(0, 0, COURT.Length / 2)))
 				feedback:FireClient(player, "Notice", { Text = ("Your match is on %s"):format(own.Court.DisplayName) })
 			else

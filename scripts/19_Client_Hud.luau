@@ -599,10 +599,15 @@ local function rulesText(court: Model): string
 	return ("first to %d · %d min"):format(attrNumber(court, "TargetScore"), math.floor(attrNumber(court, "MatchDuration") / 60 + 0.5))
 end
 
--- Someone standing alone on an idle court's pad (not me), so I can go play them
+-- Someone standing alone on an idle court's pad (not me), so I can go play them.
+-- From my own pad (except) only courts listed before it count, so when two
+-- players wait alone on different courts just one is told to walk over.
 local function waitingElsewhere(except: Model?): (Model?, string?)
 	for _, court in courtsInOrder() do
-		if court ~= except and attrString(court, "State") == "Idle" then
+		if court == except then
+			break
+		end
+		if attrString(court, "State") == "Idle" then
 			local home, away = attrNumber(court, "PadHomeUserId"), attrNumber(court, "PadAwayUserId")
 			local lone = if home ~= 0 and away == 0 then home elseif away ~= 0 and home == 0 then away else 0
 			if lone ~= 0 and lone ~= player.UserId then

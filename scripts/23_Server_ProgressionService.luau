@@ -91,7 +91,7 @@ local function onMatchEnded(result: MatchService.MatchResult)
 		end
 		local score = if side == "Home" then result.HomeScore else result.AwayScore
 		local outcome = if result.Winner == player then "Win" elseif result.Winner == nil then "Draw" else "Loss"
-		-- Shorter games (a lower target) pay proportionally less, so no court pays more per minute
+		-- Shorter games (a lower target) pay proportionally less
 		local scale = result.TargetScore / Config.Match.TargetScore
 		local coins = math.floor(rewards[outcome] * scale + 0.5) + math.min(score * rewards.PerPoint, rewards.MaxPointCoins)
 		if reason == "Forfeit" and outcome == "Loss" then

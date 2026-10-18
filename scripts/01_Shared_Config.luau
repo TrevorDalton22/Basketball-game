@@ -242,9 +242,9 @@ Config.Players = {
 
 Config.Progression = {
 	-- Coins for a match that counts, plus PerPoint for every point you scored
-	-- (up to MaxPointCoins). Practice never counts. Win/Loss/Draw scale with the
-	-- court's target score (first to 11 pays 11/15 of these), so no court pays
-	-- more per minute.
+	-- (up to MaxPointCoins). Practice never counts. Win/Loss/Draw are for the
+	-- standard game (Config.Match) and scale with a court's target score (first
+	-- to 11 pays 11/15 of these), so a shorter game pays less.
 	Rewards = { Win = 30, Loss = 10, Draw = 15, PerPoint = 1, MaxPointCoins = 20 },
 	-- A forfeit or cancel before this much game clock has run counts for
 	-- nobody (stops two accounts farming wins by quitting straight away).

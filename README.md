@@ -34,7 +34,7 @@ This is a standalone project. It isn't connected to any other game.
   | **COURT 3 · SUNSET** | Warm orange and purple, to the right | Long game: first to 21, 5 minutes |
 
   Each has a painted floor, key, three-point line with corners, a glass backboard, a physical rim (the ball can bounce off it), a net, a fence with one entrance facing the lobby, and a live sign that shows the court's rules or its score. Signs on the arch point to Court 2 and Court 3. Each court has its own pads, ball and practice mode.
-- **Queue pads:** stand on a court's blue **HOME** or red **AWAY** pad (each says which court it belongs to). When both are taken, the match starts after 2 seconds. If someone is already waiting alone on another court, the hint tells you where, so you can go and play them. You can step off or press **LEAVE** at any time. While a court is in a game its pads show **IN GAME**, and anyone who walks onto the court is moved off.
+- **Queue pads:** stand on a court's blue **HOME** or red **AWAY** pad (each says which court it belongs to). When both are taken, the match starts after 2 seconds. If someone is already waiting alone on another court, the hint tells you where, so you can go and play them (when two players wait alone on different courts, only the one on the later court is told to walk over). You can step off or press **LEAVE** at any time. While a court is in a game its pads show **IN GAME**, and anyone who walks onto the court is moved off.
 - **Ball possession:** walk into a loose ball to pick it up. Only one player can hold it at a time, and the server decides who has it.
 - **Timed shooting:** hold the shoot button and release when the meter is in the green. The release decides the shot: early means short, late means long or off the glass, and perfect almost always goes in. A defender standing in front of you lowers your chances.
 - **Layups and dunks:** drive at the rim and press shoot. There's no meter; it happens on the press. Running hard from close in is a **dunk**: you leap at the hoop, slam it and drop down in front of the rim. Dunks almost always go in and are very hard to block. A defender standing in your path can stop you short, and then the dunk becomes a layup. Driving from a bit further out, or more slowly, is a **layup**: a quick hop and a soft finish. Layups go in often, but a defender in front can contest them, or jump to block them in the short moment before the ball leaves your hands. It only counts as a drive once you've been moving at the rim for a moment, so a quick first step or a sudden cut still gives you the jump shot. If a layup can't happen (for example you ran past the rim), a message says why. Standing still near the rim still gives you the normal jump shot with the meter, and so does driving along the baseline under the backboard (where shots aren't allowed).
@@ -42,7 +42,7 @@ This is a standalone project. It isn't connected to any other game.
 - **Blocks:** react to the shot. Be on the ground when the shooter starts, then jump in front of them before they release. If you're in the air, close and between them and the rim, you can reject the shot into a loose ball. Bunny-hopping or hovering doesn't block anything.
 - **Crossovers:** on offense, the crossover button bursts you sideways and switches the ball to your other hand. For a split second you can't be stolen from. A defender who reaches during it gets their **ankles broken** and stumbles.
 - **Scoring:** 2 points inside the arc, 3 outside (configurable). Every basket is checked on the server and counted once, for the right player.
-- **Match flow:** 3-2-1 countdown, 4-minute clock, first to 15.
+- **Match flow:** 3-2-1 countdown, then each court's own clock and target (see the table above; the standard game on COURT 1 is first to 15 with a 4-minute clock).
   - **Overtime:** a tie when time runs out goes to "next basket wins". Overtime ends in a draw after 2 minutes.
   - **Buzzer beaters:** a shot already in the air when time runs out still counts.
   - **20-second shot clock:** you can't stall with the ball. It resets on a change of possession or when a shot hits the rim. Grabbing your own airball, or a miss that only hit the glass, doesn't reset it.
@@ -55,7 +55,7 @@ This is a standalone project. It isn't connected to any other game.
 - **Practice mode:** when a court has no match, anyone can shoot around with its ball. No points count.
 - **HUD:** scoreboard with a possession dot, shot clock, shot meter, queue panel, banners, toasts, results and context hints. Works on **PC, phone and controller**.
 
-Progression (wins, losses, points and currency saved with DataStores) and more courts come next. See the [Roadmap](#roadmap).
+Animations come next. See the [Roadmap](#roadmap).
 
 ## Controls
 
@@ -195,7 +195,7 @@ Skipping this is fine for trying the game: stats still count for the session, an
 
 ### Solo (practice)
 
-1. Press **Play** (F5) and open **View → Output**. You should see `[Street Hoops] ✓ Server ready — 1 court(s)` and **no red errors**.
+1. Press **Play** (F5) and open **View → Output**. You should see `[Street Hoops] ✓ Server ready — 3 court(s)` (one per entry in `Config.Courts`) and **no red errors**.
 2. Walk through the arch toward the court and pick up the orange ball on the free-throw line.
 3. **Hold E**. A meter appears beside your character, and your player jumps. **Release when the white bar is in the green band.**
 4. Made shots show `+2 BUCKET! (practice)` or `+3 SPLASH! (practice)`.
@@ -234,11 +234,13 @@ Skipping this is fine for trying the game: stats still count for the session, an
 ### Several courts at once
 
 1. In **Clients and Servers**, pick **4 Players** and click **Start**.
-2. Put Player1 and Player2 on **COURT 2**'s pads (left of the arch) and Player3 and Player4 on **COURT 3**'s pads (right). Both matches start and run at the same time.
-3. What to check:
+2. Waiting hints, before any match starts:
+   - [ ] Put Player1 alone on a **COURT 2** pad (left of the arch). Player2's screen says *"Player1 is waiting on COURT 2 · step onto its free pad to play"*.
+   - [ ] Put Player3 alone on a **COURT 3** pad (right of the arch). Player3's queue panel says *"Player1 is waiting on COURT 2 — walk over to play them"*, while Player1's still says *"Waiting for an opponent on the other pad…"* (only one of them is sent walking).
+3. Now put Player2 on COURT 2's free pad and Player4 on COURT 3's free pad. Both matches start and run at the same time.
+4. What to check:
    - [ ] COURT 2's scoreboard says **COURT 2 · FIRST TO 11** and its clock starts at **3:00**; COURT 3 says **FIRST TO 21** and **5:00**.
-   - [ ] Walking a player from one match onto the other court sends them straight back to their own court with *"Your match is on COURT 2"*.
-   - [ ] With only one player on a pad, the others' hint says *"… is waiting on COURT 2"*.
+   - [ ] Walking a player from one match onto the other court sends them straight back to their own court with *"Your match is on COURT 2"* (or COURT 3).
    - [ ] Winning on COURT 2 shows *+22 coins* (plus points), not +30.
 
 ### Phone and controller
