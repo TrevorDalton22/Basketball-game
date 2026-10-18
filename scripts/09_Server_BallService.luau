@@ -21,7 +21,7 @@ local BasketballMath = require(Shared:WaitForChild("BasketballMath"))
 local CharacterService = require(script.Parent:WaitForChild("CharacterService"))
 
 local BallService = {}
-BallService.ScriptVersion = 2 -- Main/ClientMain compare this to spot an old copy; bump when this file changes
+BallService.ScriptVersion = 3 -- Main/ClientMain compare this to spot an old copy; bump when this file changes
 BallService.ScriptFile = "09_Server_BallService" -- and this to spot another file's code pasted here
 
 export type BallState = "Held" | "Loose" | "InFlight" | "Scored" | "Dead"
@@ -94,6 +94,7 @@ local function setHolder(ball: Ball, player: Player?)
 	-- Which hand the ball is in (crossovers switch it; client visuals mirror it)
 	ball.Part:SetAttribute("Hand", "Right")
 	ball.Part:SetAttribute("Finish", "") -- "Layup"/"Dunk" while one is under way
+	ball.Part:SetAttribute("ShotKind", "") -- set on launch: the shot as the server finally decided it
 end
 
 local function updateAntiGravity(ball: Ball)
@@ -356,6 +357,9 @@ function BallService.Launch(ball: Ball, from: Vector3, velocity: Vector3, shot: 
 	ball.TouchedRim = false
 	setHolder(ball, nil)
 	local part = ball.Part
+	-- Before the state change, so clients see the final kind ("Jumper", "Layup",
+	-- or "Dunk", which may have become a layup) when the ball leaves the hands
+	part:SetAttribute("ShotKind", shot.Kind)
 	part.CFrame = CFrame.new(from)
 	part.AssemblyLinearVelocity = velocity
 	local flat = Vector3.new(velocity.X, 0, velocity.Z)

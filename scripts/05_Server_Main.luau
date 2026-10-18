@@ -42,7 +42,7 @@ local EXPECTED: { Expected } = {
 	{ Path = { "ServerScriptService", "Server", "CharacterService" }, Class = "ModuleScript", File = "06_Server_CharacterService", Version = 3 },
 	{ Path = { "ServerScriptService", "Server", "RemoteGuard" }, Class = "ModuleScript", File = "07_Server_RemoteGuard", Version = 1 },
 	{ Path = { "ServerScriptService", "Server", "CourtBuilder" }, Class = "ModuleScript", File = "08_Server_CourtBuilder", Version = 3 },
-	{ Path = { "ServerScriptService", "Server", "BallService" }, Class = "ModuleScript", File = "09_Server_BallService", Version = 2 },
+	{ Path = { "ServerScriptService", "Server", "BallService" }, Class = "ModuleScript", File = "09_Server_BallService", Version = 3 },
 	{ Path = { "ServerScriptService", "Server", "MatchService" }, Class = "ModuleScript", File = "10_Server_MatchService", Version = 4 },
 	{ Path = { "ServerScriptService", "Server", "QueueService" }, Class = "ModuleScript", File = "11_Server_QueueService", Version = 2 },
 	{ Path = { "ServerScriptService", "Server", "ShotService" }, Class = "ModuleScript", File = "12_Server_ShotService", Version = 3 },

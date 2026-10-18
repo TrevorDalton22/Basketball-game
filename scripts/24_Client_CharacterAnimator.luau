@@ -246,6 +246,24 @@ local function between(a: Vector3, b: Vector3): CFrame
 	return CFrame.fromAxisAngle(a:Cross(b).Unit, math.acos(dot))
 end
 
+-- A rotation that turns `localAlong` onto `worldAlong` and, around that, the
+-- side direction `localSide` onto `worldSide` (both squared up first)
+local function basis(along: Vector3, side: Vector3): CFrame
+	local y = along.Unit
+	local x = side - y * side:Dot(y)
+	if x.Magnitude < 1e-4 then
+		x = y:Cross(Vector3.zAxis)
+		if x.Magnitude < 1e-4 then
+			x = y:Cross(Vector3.xAxis)
+		end
+	end
+	x = x.Unit
+	return CFrame.fromMatrix(Vector3.zero, x, y, x:Cross(y))
+end
+local function aligned(localAlong: Vector3, localSide: Vector3, worldAlong: Vector3, worldSide: Vector3): CFrame
+	return basis(worldAlong, worldSide) * basis(localAlong, localSide):Inverse()
+end
+
 -- A rotation given in a joint's Part0 frame, as a Transform for that joint
 local function inJoint(joint: Joint, rotationInPart0: CFrame): CFrame
 	local c0 = rotation(jointC0(joint))
@@ -272,7 +290,7 @@ end
 type ArmGoal = {
 	Target: Vector3, -- where the hand should be (root space)
 	Pole: Vector3, -- which way the elbow points (root space)
-	Flex: number, -- wrist bend, radians: > 0 bends the hand forward (palm side)
+	Flex: number, -- wrist bend, radians: > 0 bends the hand the way the elbow folds, < 0 back
 	Layer: string,
 	BlendIn: number?,
 }
@@ -476,7 +494,6 @@ local function solveArm(arm: Arm, chest: CFrame, target: Vector3, pole: Vector3,
 	local pivot = chest * jointC0(shoulder)
 	local S = pivot.Position
 	local shC1 = jointC1(shoulder)
-	local upperRest = rotation(pivot * shC1:Inverse())
 	local toTarget = target - S
 	local distance = toTarget.Magnitude
 	if distance < 1e-3 or distance ~= distance then
@@ -490,6 +507,7 @@ local function solveArm(arm: Arm, chest: CFrame, target: Vector3, pole: Vector3,
 		if bone.Magnitude < 1e-3 then
 			return nil
 		end
+		local upperRest = rotation(pivot * shC1:Inverse())
 		local turned = between(upperRest:VectorToWorldSpace(bone.Unit), direction) * upperRest
 		local part = CFrame.new(S) * turned * CFrame.new(-shC1.Position)
 		return { Shoulder = rotation(pivot:Inverse() * part * shC1) }
@@ -499,10 +517,10 @@ local function solveArm(arm: Arm, chest: CFrame, target: Vector3, pole: Vector3,
 	local elC0, elC1 = jointC0(elbow), jointC1(elbow)
 	local upperBone = elC0.Position - shC1.Position
 	local l1 = upperBone.Magnitude
-	-- Bend about the forearm's own side-to-side axis, then treat forearm and
-	-- (bent) hand as one bone from the elbow to the palm, so the palm lands
-	-- exactly on the target whatever the wrist is doing
-	local wristT = inJoint(wrist, CFrame.Angles(-flex, 0, 0))
+	-- Bend the wrist about the forearm's side-to-side axis (flex > 0: the way
+	-- the elbow folds), then treat forearm and hand as one bone from the elbow
+	-- to the palm, so the palm lands exactly on the target
+	local wristT = inJoint(wrist, CFrame.Angles(flex, 0, 0))
 	local palmInForearm = (jointC0(wrist) * wristT * jointC1(wrist):Inverse()) * palmOf(arm)
 	local lowerBone = palmInForearm - elC1.Position
 	local l2 = lowerBone.Magnitude
@@ -524,11 +542,14 @@ local function solveArm(arm: Arm, chest: CFrame, target: Vector3, pole: Vector3,
 	local elbowPoint = S + direction * (l1 * cosA) + bend * (l1 * sinA)
 	local palmPoint = S + direction * d
 
-	local upperRot = between(upperRest:VectorToWorldSpace(upperBone.Unit), (elbowPoint - S).Unit) * upperRest
+	-- The elbow is a hinge: both bones turn about one axis, square to the plane
+	-- of shoulder, elbow and palm, so the arm never twists along its length and
+	-- always folds the way an elbow folds (about each joint's own X axis)
+	local hinge = bend:Cross(direction)
+	local upperRot = aligned(upperBone, rotation(elC0).XVector, elbowPoint - S, hinge)
 	local upper = CFrame.new(S) * upperRot * CFrame.new(-shC1.Position)
 	local elbowPivot = upper * elC0
-	local lowerRest = rotation(elbowPivot * elC1:Inverse())
-	local lowerRot = between(lowerRest:VectorToWorldSpace(lowerBone.Unit), (palmPoint - elbowPivot.Position).Unit) * lowerRest
+	local lowerRot = aligned(lowerBone, rotation(elC1).XVector, palmPoint - elbowPivot.Position, hinge)
 	local lower = CFrame.new(elbowPivot.Position) * lowerRot * CFrame.new(-elC1.Position)
 	return {
 		Shoulder = rotation(pivot:Inverse() * upper * shC1),
@@ -643,7 +664,9 @@ local function scanBalls(now: number)
 			local shooter = playerById(bt.Holder)
 			if shooter then
 				local track = getTrack(shooter)
-				track.Release = if bt.Kind ~= "" then bt.Kind else "Jumper"
+				-- The server's final say (a stopped-short dunk becomes a layup), else what we saw
+				local shotKind = attrString(part, "ShotKind")
+				track.Release = if shotKind ~= "" then shotKind elseif bt.Kind ~= "" then bt.Kind else "Jumper"
 				track.ReleaseAt = now
 				track.ReleaseSide = bt.Side
 				local rim = court:GetAttribute("RimCenter")
@@ -791,7 +814,7 @@ local function computeGoals(track: Track, rig: Rig, root: BasePart, chest: CFram
 			-- Hands on knees
 			for side = -1, 1, 2 do
 				local knee = Vector3.new(side * 0.55, -1.7, -0.75)
-				goals.Arms[side] = armGoal(knee + Vector3.new(0, 0.35, -0.25), Vector3.new(side, 0.2, 0.6), 0.3, "Slump")
+				goals.Arms[side] = armGoal(knee + Vector3.new(0, 0.35, -0.25), Vector3.new(side, 0.2, 0.6), 0, "Slump")
 			end
 			goals.Pitch = if rig.R6 then 0.25 else 0.55
 			goals.Look = Vector3.new(0, -0.8, -1)
@@ -823,7 +846,7 @@ local function computeGoals(track: Track, rig: Rig, root: BasePart, chest: CFram
 		local across = Vector3.new(-forward.Z, 0, forward.X)
 		local front = rim - forward * Config.Court.RimRadius + Vector3.new(0, 0.15, 0)
 		for side = -1, 1, 2 do
-			goals.Arms[side] = armGoal(toward(shoulders[side], front + across * (side * 0.6), reach[side] * 1.05), Vector3.new(side, -0.3, 0.6), 0.6, "Hang", 22)
+			goals.Arms[side] = armGoal(toward(shoulders[side], front + across * (side * 0.6), reach[side] * 1.05), Vector3.new(side * 0.15, -1, 0.3), 0, "Hang", 22)
 		end
 		goals.Pitch = 0.1
 		goals.Look = rim
@@ -838,7 +861,7 @@ local function computeGoals(track: Track, rig: Rig, root: BasePart, chest: CFram
 		else
 			up = Vector3.new(releaseSide * 0.05, 0.86, -0.5).Unit
 		end
-		goals.Arms[releaseSide] = armGoal(s + up * reach[releaseSide] * 1.05, Vector3.new(releaseSide * 0.3, -0.3, -1), if track.Release == "Jumper" then 1.2 else 0.5, "Follow", 30)
+		goals.Arms[releaseSide] = armGoal(s + up * reach[releaseSide] * 1.05, Vector3.new(releaseSide * 0.3, -0.3, -1), if track.Release == "Jumper" then -1.2 else -0.5, "Follow", 30)
 		if track.Release == "Jumper" then
 			local o = shoulders[-releaseSide]
 			goals.Arms[-releaseSide] = armGoal(o + Vector3.new(-releaseSide * 0.25, 0.6, -0.7) * reach[-releaseSide], Vector3.new(-releaseSide, -0.5, 0), 0, "Follow")
@@ -863,7 +886,7 @@ local function computeGoals(track: Track, rig: Rig, root: BasePart, chest: CFram
 			return goals
 		elseif held.Shooting and held.Kind == "Layup" then
 			local side = if ball.X >= 0 then 1 else -1
-			goals.Arms[side] = armGoal(ball - Vector3.new(0, radius, -0.05), Vector3.new(side * 0.6, -0.6, -0.3), -0.3, "LayupSet", 16)
+			goals.Arms[side] = armGoal(ball - Vector3.new(0, radius, -0.05), Vector3.new(side * 0.6, -0.6, -0.3), 0.3, "LayupSet", 16)
 			local o = shoulders[-side]
 			goals.Arms[-side] = armGoal(o + Vector3.new(-side * 0.35, 0.45, -0.55) * reach[-side], Vector3.new(-side, -0.5, 0.2), 0, "LayupSet")
 			goals.Knees[-side] = true
@@ -872,7 +895,7 @@ local function computeGoals(track: Track, rig: Rig, root: BasePart, chest: CFram
 		elseif held.Shooting then
 			-- Jump shot set: shooting hand under and behind the ball, guide hand on its side
 			local side = if ball.X >= 0 then 1 else -1
-			goals.Arms[side] = armGoal(ball + Vector3.new(0, -radius * 0.75, radius * 0.6), Vector3.new(side * 0.25, -0.5, -1), -0.7, "Set", 16)
+			goals.Arms[side] = armGoal(ball + Vector3.new(0, -radius * 0.75, radius * 0.6), Vector3.new(side * 0.25, -0.5, -1), 0.7, "Set", 16)
 			goals.Arms[-side] = armGoal(ball + Vector3.new(-side * radius * 1.05, 0, 0.05), Vector3.new(-side, -0.5, 0.1), 0, "Set", 16)
 			goals.Pitch = -0.05
 			lookAt(rim)
@@ -882,7 +905,7 @@ local function computeGoals(track: Track, rig: Rig, root: BasePart, chest: CFram
 		local side = if ball.X >= 0 then 1 else -1
 		local hold = BALL.HoldOffset.Position
 		local handY = math.clamp(ball.Y + radius, hold.Y + radius - ANIM.DribbleHandTravel, hold.Y + radius + 0.1)
-		goals.Arms[side] = armGoal(Vector3.new(ball.X, handY, ball.Z), Vector3.new(side * 0.7, -0.2, 0.7), 0.35, "Dribble")
+		goals.Arms[side] = armGoal(Vector3.new(ball.X, handY, ball.Z), Vector3.new(side * 0.4, -0.2, 0.9), -0.35, "Dribble")
 		local o = shoulders[-side]
 		goals.Arms[-side] = armGoal(o + Vector3.new(-side * 0.45, -0.45, -0.75) * reach[-side], Vector3.new(-side, -0.6, 0.3), 0, "Guard")
 		local speedFraction = math.clamp(flatSpeed / Config.Movement.WalkSpeed, 0, 1)
@@ -925,7 +948,7 @@ local function computeGoals(track: Track, rig: Rig, root: BasePart, chest: CFram
 		for side = -1, 1, 2 do
 			local s = shoulders[side]
 			local aim = if target then target + Vector3.new(side * 0.45, 0, 0) else s + Vector3.new(side * 0.2, 1, -0.3).Unit * reach[side] * 1.1
-			goals.Arms[side] = armGoal(toward(s, aim, reach[side] * 1.1), Vector3.new(side, -0.4, 0.4), 0.2, "Contest", 18)
+			goals.Arms[side] = armGoal(toward(s, aim, reach[side] * 1.1), Vector3.new(side, -0.4, 0.4), 0, "Contest", 18)
 		end
 		return goals
 	end
@@ -1186,7 +1209,10 @@ local function checkApplied()
 	for side, arm in { [1] = rig.Right, [-1] = rig.Left } do
 		local limb = track.Limbs[side]
 		local toTarget = limb.Target - limb.Shoulder
-		if limb.Weight >= 0.99 and limb.Reachable and now - limb.SwitchedAt > SWITCH_TIME + 0.1 and toTarget.Magnitude > 0.3 then
+		-- (A target straight below the shoulder proves nothing: a hanging arm is there anyway)
+		local telling = toTarget.Magnitude > 0.3 and toTarget.Unit.Y > -0.8
+		-- (An R6 arm can't bend, so it only has to point the right way)
+		if limb.Weight >= 0.99 and (rig.R6 or limb.Reachable) and now - limb.SwitchedAt > SWITCH_TIME + 0.1 and telling then
 			local toPalm = rootCF:PointToObjectSpace(arm.Hand.CFrame * palmOf(arm)) - limb.Shoulder
 			-- R15 hands land on the target; a straight R6 arm only points at it
 			local ok = if rig.R6 then toPalm.Unit:Dot(toTarget.Unit) > 0.97 else (toPalm - toTarget).Magnitude < 0.5

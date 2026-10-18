@@ -389,7 +389,7 @@ If you see a red error, copy it from the Output window and send it to me, includ
 
 **Match states:** `Idle` (practice) → `Countdown` → `Live` ⇄ `Dead` → `Check` → `Live` … → `GameOver` → `Idle`.
 
-**Animations.** Every client poses every nearby character itself, from what the server already shares: who holds which ball and whether they're shooting, the score, the match result, and the moves the server confirms (steal reaches, broken ankles). Each frame, right after Roblox's own animations have posed the body, `CharacterAnimator` works out where the hands should be (on the ball, up for a block, on the rim), bends the arm joints to put them there, and blends that over the normal animation. Nothing about it is sent to the server, so it can't affect gameplay.
+**Animations.** Every client poses every nearby character itself, from what the server already shares: who holds which ball and whether they're shooting, the shot type the server finally decided on (a dunk stopped short becomes a layup), the score, the match result, and the moves the server confirms (steal reaches, broken ankles). Each frame, right after Roblox's own animations have posed the body, `CharacterAnimator` works out where the hands should be (on the ball, up for a block, on the rim), bends the arm joints to put them there, and blends that over the normal animation. Nothing about it is sent to the server, so it can't affect gameplay.
 
 **Script roles**
 
