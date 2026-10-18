@@ -19,8 +19,8 @@ end
 
 -- This file's version, published first so ClientMain can tell when Main is the
 -- old copy, and the version ClientMain must check in with (see the end)
-local MAIN_VERSION = 6
-local CLIENT_MAIN_VERSION = 6
+local MAIN_VERSION = 7
+local CLIENT_MAIN_VERSION = 7
 ReplicatedStorage:SetAttribute("StreetHoopsMainVersion", MAIN_VERSION)
 
 --------------------------------------------------------------------------------
@@ -33,7 +33,7 @@ type Expected = { Path: { string }, Class: string, File: string?, Version: numbe
 
 local EXPECTED: { Expected } = {
 	{ Path = { "ReplicatedStorage", "Shared" }, Class = "Folder" },
-	{ Path = { "ReplicatedStorage", "Shared", "Config" }, Class = "ModuleScript", File = "01_Shared_Config", Version = 4 },
+	{ Path = { "ReplicatedStorage", "Shared", "Config" }, Class = "ModuleScript", File = "01_Shared_Config", Version = 5 },
 	{ Path = { "ReplicatedStorage", "Shared", "Signal" }, Class = "ModuleScript", File = "02_Shared_Signal", Version = 1 },
 	{ Path = { "ReplicatedStorage", "Shared", "Net" }, Class = "ModuleScript", File = "03_Shared_Net", Version = 3 },
 	{ Path = { "ReplicatedStorage", "Shared", "BasketballMath" }, Class = "ModuleScript", File = "04_Shared_BasketballMath", Version = 1 },
@@ -53,10 +53,11 @@ local EXPECTED: { Expected } = {
 	{ Path = { "StarterPlayer", "StarterPlayerScripts", "ClientMain", "ShootController" }, Class = "ModuleScript", File = "17_Client_ShootController" },
 	{ Path = { "StarterPlayer", "StarterPlayerScripts", "ClientMain", "BallVisuals" }, Class = "ModuleScript", File = "18_Client_BallVisuals" },
 	{ Path = { "StarterPlayer", "StarterPlayerScripts", "ClientMain", "Hud" }, Class = "ModuleScript", File = "19_Client_Hud" },
-	{ Path = { "ServerScriptService", "Server", "MovesService" }, Class = "ModuleScript", File = "20_Server_MovesService", Version = 1 },
+	{ Path = { "ServerScriptService", "Server", "MovesService" }, Class = "ModuleScript", File = "20_Server_MovesService", Version = 2 },
 	{ Path = { "StarterPlayer", "StarterPlayerScripts", "ClientMain", "MovesController" }, Class = "ModuleScript", File = "21_Client_MovesController" },
 	{ Path = { "ServerScriptService", "Server", "DataService" }, Class = "ModuleScript", File = "22_Server_DataService", Version = 2 },
 	{ Path = { "ServerScriptService", "Server", "ProgressionService" }, Class = "ModuleScript", File = "23_Server_ProgressionService", Version = 2 },
+	{ Path = { "StarterPlayer", "StarterPlayerScripts", "ClientMain", "CharacterAnimator" }, Class = "ModuleScript", File = "24_Client_CharacterAnimator" },
 }
 
 local SEARCH_ROOTS = { "Workspace", "ReplicatedStorage", "ReplicatedFirst", "ServerScriptService", "ServerStorage", "StarterPlayer", "StarterGui", "StarterPack", "Lighting" }

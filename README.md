@@ -22,7 +22,7 @@ This is a standalone project. It isn't connected to any other game.
 
 ## What's in this version
 
-**Phase 5, step 4: more courts** (after 1v1 defense, layups/dunks and progression), built on the Phase 3 prototype
+**Phase 5, step 5: animations** (after 1v1 defense, layups/dunks, progression and more courts), built on the Phase 3 prototype
 
 - **Street park:** grass, a concrete plaza, trees, benches, floodlights, a STREET HOOPS entrance arch and a sunset lighting setup. It's all built by script when the server starts.
 - **Three 1v1 half courts, all playable at once,** each with its own look and rules:
@@ -54,8 +54,16 @@ This is a standalone project. It isn't connected to any other game.
 - **No shots from behind or right beside the backboard:** the glass is in the way, so the shot is refused and a message says why.
 - **Practice mode:** when a court has no match, anyone can shoot around with its ball. No points count.
 - **HUD:** scoreboard with a possession dot, shot clock, shot meter, queue panel, banners, toasts, results and context hints. Works on **PC, phone and controller**.
+- **Body animations:** the arms follow the ball.
+  - **Dribbling:** the ball hand pumps with every bounce while the other arm guards, and you lean forward as you run. A crossover swings the ball across and you lean into it.
+  - **Jump shot:** the ball comes up to your forehead with a guide hand on its side, then the shooting arm follows through with a flick of the wrist.
+  - **Finishes:** a layup goes up with one hand and a knee raised; a dunk is two-handed, then you hang on the rim.
+  - **Defense:** you reach at the ball when you try a steal, put your arms up when you jump to block or rebound, and spread your arms when guarding the ball carrier.
+  - **Reactions:** broken ankles make you stumble, scoring gets a fist pump, and at the end the winner celebrates while the loser puts their hands on their knees. Heads follow the ball.
 
-Animations come next. See the [Roadmap](#roadmap).
+  It's all done in code on top of Roblox's own walk, run and jump animations, so there's nothing to upload, and it works with **R15 and R6** avatars. Everyone sees everyone's moves. It's purely visual: hitboxes and results don't change.
+
+Cosmetics come next. See the [Roadmap](#roadmap).
 
 ## Controls
 
@@ -75,7 +83,7 @@ Animations come next. See the [Roadmap](#roadmap).
 
 ## Build it in Roblox Studio from scratch
 
-This takes about 15 minutes. You create **2 folders and 23 scripts** and paste the code from the [`scripts/`](scripts) folder into each one. Rojo and plugins aren't needed.
+This takes about 15 minutes. You create **2 folders and 24 scripts** and paste the code from the [`scripts/`](scripts) folder into each one. Rojo and plugins aren't needed.
 
 ### Step 1: Create a new, empty place
 
@@ -128,8 +136,9 @@ How to add an object: hover over the parent in the Explorer, click **⊕**, and 
 | 21 | StarterPlayer › StarterPlayerScripts › **ClientMain** | `MovesController` | ModuleScript | [`21_Client_MovesController.luau`](scripts/21_Client_MovesController.luau) |
 | 22 | ServerScriptService › Server | `DataService` | ModuleScript | [`22_Server_DataService.luau`](scripts/22_Server_DataService.luau) |
 | 23 | ServerScriptService › Server | `ProgressionService` | ModuleScript | [`23_Server_ProgressionService.luau`](scripts/23_Server_ProgressionService.luau) |
+| 24 | StarterPlayer › StarterPlayerScripts › **ClientMain** | `CharacterAnimator` | ModuleScript | [`24_Client_CharacterAnimator.luau`](scripts/24_Client_CharacterAnimator.luau) |
 
-⚠️ Scripts **14–19 and 21 go inside the `ClientMain` LocalScript**. Hover over `ClientMain` itself and click ⊕. Don't add them to StarterPlayerScripts.
+⚠️ Scripts **14–19, 21 and 24 go inside the `ClientMain` LocalScript**. Hover over `ClientMain` itself and click ⊕. Don't add them to StarterPlayerScripts.
 
 When you're done, the Explorer should look like this:
 
@@ -157,6 +166,7 @@ StarterPlayer
 └─ StarterPlayerScripts
    └─ ClientMain      ← LocalScript
       ├─ BallVisuals
+      ├─ CharacterAnimator
       ├─ Hud
       ├─ MatchClient
       ├─ MovesController
@@ -188,6 +198,16 @@ Stats are saved with Roblox DataStores, which only work in a place that is on Ro
 3. Press **Play**. Output should **not** show *"⚠ Player stats won't be saved"*.
 
 Skipping this is fine for trying the game: stats still count for the session, and both Output and a message on screen say they aren't being saved.
+
+### Step 8: Turn off fixed-rate simulation (for the animations)
+
+Roblox is rolling out a newer "fixed-rate" physics mode that currently ignores animation done in code (a known Roblox issue). The rest of the game works either way, but the body animations only show with it off:
+
+1. In the **Explorer**, click **Workspace**.
+2. In **Properties**, type `UseFixedSimulation` into the filter box at the top.
+3. If it shows up and isn't **Disabled**, set it to **Disabled**. (If it doesn't show up, your Studio doesn't have it yet, so there's nothing to do.)
+
+If you skip this and it's on, Output says *"⚠ The body animations aren't showing on your character…"* once you hold the ball for a few seconds.
 
 ---
 
@@ -243,6 +263,26 @@ Skipping this is fine for trying the game: stats still count for the session, an
    - [ ] Walking a player from one match onto the other court sends them straight back to their own court with *"Your match is on COURT 2"* (or COURT 3).
    - [ ] Winning on COURT 2 shows *+22 coins* (plus points), not +30.
 
+### Animations
+
+Solo (**Play**):
+
+- [ ] Pick up a ball and run: your dribbling hand pumps with each bounce, the other arm is out in front, and you lean forward.
+- [ ] Press **Q**: the ball crosses to the other hand and you lean into the crossover.
+- [ ] Hold **E**: both hands bring the ball up in front of your forehead. Release: the shooting arm reaches up and the wrist flicks over.
+- [ ] Drive in for a layup (one hand up, opposite knee raised) and a dunk (two hands, then you hang on the rim for a moment).
+- [ ] Jump without the ball: both arms go up.
+- [ ] Output shows no *"⚠ The body animations aren't showing"* line (if it does, do Step 8).
+
+Two players (**Clients and Servers**, 2 players, start a match):
+
+- [ ] Each window shows the other player's dribble, shot and dunk the same way.
+- [ ] As the defender near the ball carrier, your arms spread out; press **E** to steal and your arm jabs at the ball.
+- [ ] Reach in during a crossover: the defender stumbles with arms flailing (**ANKLES!**).
+- [ ] The scorer pumps a fist after a basket. At the end, the winner celebrates and the loser puts their hands on their knees.
+
+Optional: set the avatar type to **R6** (**File → Experience Settings → Avatar**, or the **Avatar Settings** window in newer Studio), play again, and check the same moves. R6 arms are one piece, so they point instead of bending. Set it back afterwards if you prefer R15.
+
 ### Phone and controller
 
 - **Phone:** in the **Test** tab, use **Device** emulation and pick a phone. Press Play. While you hold the ball, a **SHOOT** button appears next to the jump button.
@@ -278,6 +318,11 @@ Every gameplay number is in **ReplicatedStorage › Shared › Config**. The mos
 | `Progression.Rewards` | Win 30 / Loss 10 / Draw 15, +1 per point (max 20) | Coins for a match that counts (Win/Loss/Draw scale with the court's target score) |
 | `Progression.MinPlayedSeconds` | 45 | A forfeit or cancel before this much game clock counts for nobody |
 | `Progression.StoreName` | `StreetHoops_PlayerData_v1` | DataStore name. Changing it starts everyone from zero |
+| `Animation.Enabled` | true | `false`: plain Roblox animations only |
+| `Animation.DribbleLean` | 14 | Degrees of forward lean while dribbling at full speed |
+| `Animation.FollowThroughTime` / `RimHangTime` | 0.6 / 0.9 | How long the shooting arm stays up, and the longest hang on the rim |
+| `Animation.MaxDistance` | 150 | Characters farther than this from the camera aren't animated (saves work) |
+| `Ball.ShootPoseOffset` / `LayupPoseOffset` / `DunkPoseOffset` | (see Config) | Where the ball goes for each shot, relative to the player. The hands follow it, so keep it within arm's reach |
 
 **Courts** are the entries in `Config.Courts`. Each one has:
 
@@ -291,9 +336,9 @@ Keep `Court1` first, because it anchors the lobby. If two courts overlap, or two
 
 ## Troubleshooting
 
-**First, read the Output window** (View → Output) right after you press Play. When the server starts, `Main` checks that all 23 scripts are in the right places and that the shared and server scripts aren't old copies. Then `ClientMain` checks the client scripts (and checks that `Main` is current). You'll see one of these:
+**First, read the Output window** (View → Output) right after you press Play. When the server starts, `Main` checks that all 24 scripts are in the right places and that the shared and server scripts aren't old copies. Then `ClientMain` checks the client scripts (and checks that `Main` is current). You'll see one of these:
 
-- `[Street Hoops] ✓ All 23 scripts found…`, `✓ Shared and server scripts are up to date…`, `✓ Server ready`, and then `✓ Client ready`: everything loaded.
+- `[Street Hoops] ✓ All 24 scripts found…`, `✓ Shared and server scripts are up to date…`, `✓ Server ready`, and then `✓ Client ready`: everything loaded.
 - `[Street Hoops] ✗ … setup problem(s) found`, followed by a numbered list. Each line says exactly what's wrong, for example *"Config is not where it should be. Found: Workspace.Config. Move it to ReplicatedStorage > Shared > Config"*. A grey floor and a red **SETUP PROBLEM** sign also appear in the game, so you don't fall forever. Fix each item and press Play again.
 - `[Street Hoops] ✗ … script(s) are out of date` (from `Main`), or `[Street Hoops] ✗ <Name> is an old copy …` (from `ClientMain`): you updated some scripts but missed one. Each line names the file, for example *"ShotService is an old copy (version 2, needs 3). Paste scripts/12_Server_ShotService.luau into ServerScriptService > Server > ShotService again."* If it says *Main is an old copy* or *ClientMain is the old copy*, paste that one again (05 or 13).
 - Problems also appear **on screen** in a dark **STREET HOOPS SETUP PROBLEM** box at the top. (If `ClientMain` itself can't run, because it's missing or isn't a LocalScript, you get the grey floor and sign instead, and the numbered details are in Output.)
@@ -310,8 +355,11 @@ Keep `Court1` first, because it anchors the lobby. If two courts overlap, or two
 | `Config.Courts: … is too close to …` or `two courts are called …` | A court you added or moved overlaps another, or reuses an `Id`. See **Courts** under Tuning. |
 | Pressing **E** does nothing at all | A script was missed in the last update. Press Play and look for the **SETUP PROBLEM** box or `✗` lines in Output; they name the file to paste again. |
 | `… failed to load`, `… is still loading after 5 seconds`, or `… holds the code from scripts/…` | That script's code is incomplete or from another file. Paste the named file into it again (Ctrl+A in the script, then Ctrl+V). For a load error, the red line just above in Output is the script's own error. |
-| No HUD or meter (but the map is there) | `ClientMain` is disabled or is an old copy. After 30 seconds in Studio (90 on a live server) the server says which on screen (*"ClientMain is disabled…"* or *"ClientMain didn't start, or is an old copy…"*). If `ClientMain` isn't a LocalScript, or modules 14–19 and 21 aren't its direct children, the setup check catches it instead and you get the SETUP PROBLEM sign. |
+| No HUD or meter (but the map is there) | `ClientMain` is disabled or is an old copy. After 30 seconds in Studio (90 on a live server) the server says which on screen (*"ClientMain is disabled…"* or *"ClientMain didn't start, or is an old copy…"*). If `ClientMain` isn't a LocalScript, or modules 14–19, 21 and 24 aren't its direct children, the setup check catches it instead and you get the SETUP PROBLEM sign. |
 | Warning about `Baseplate` / `SpawnLocation` | Delete them (Step 2). |
+| `⚠ The body animations aren't showing on your character` | Do Step 8 (set Workspace › UseFixedSimulation to Disabled). |
+| `✗ <Name> didn't start because <Other>, which it uses, is an old copy` | Paste the *other* script again (the line above names its file); this one starts once that's fixed. |
+| Arms move normally but never follow the ball | `Animation.Enabled` is `false` in Config, or `CharacterAnimator` is missing (the setup check names it). |
 | `⚠ Player stats won't be saved on this server` | Do Step 7 (publish, then turn on Studio Access to API Services). Stats still count until you press Stop. |
 | `⚠ Couldn't load …'s stats yet … Still trying` | Roblox's DataStores are having trouble. It keeps trying while that player is in the server, and anything they earn meanwhile is added once it loads. Only if it still fails after 10 minutes does it say *won't be saved*; then rejoining loads them normally. |
 | `⚠ Couldn't save …'s stats; will try again` | Roblox's DataStores are having trouble. It tries again at the next autosave, and a player's last save when they leave keeps retrying until it works. |
@@ -341,6 +389,8 @@ If you see a red error, copy it from the Output window and send it to me, includ
 
 **Match states:** `Idle` (practice) → `Countdown` → `Live` ⇄ `Dead` → `Check` → `Live` … → `GameOver` → `Idle`.
 
+**Animations.** Every client poses every nearby character itself, from what the server already shares: who holds which ball and whether they're shooting, the score, the match result, and the moves the server confirms (steal reaches, broken ankles). Each frame, right after Roblox's own animations have posed the body, `CharacterAnimator` works out where the hands should be (on the ball, up for a block, on the rim), bends the arm joints to put them there, and blends that over the normal animation. Nothing about it is sent to the server, so it can't affect gameplay.
+
 **Script roles**
 
 | Script | Job |
@@ -362,12 +412,13 @@ If you see a red error, copy it from the Output window and send it to me, includ
 | MatchClient | Reads the match state the server publishes |
 | ShotMeter | The timing meter |
 | ShootController | Keyboard, controller and touch shooting |
-| BallVisuals | Dribble animation, shot pose, ball outline, possession marker (visual only) |
+| BallVisuals | Dribble bounce, shot pose, ball outline, possession marker (visual only) |
 | Hud | Scoreboard, banners, toasts, queue panel, results, hints |
 | MovesService | Validates steals and crossovers (blocks are checked in ShotService at release) |
 | MovesController | Steal and crossover input on keyboard, controller and touch |
 | DataService | Loads and saves each player's stats with DataStores: one server at a time per player, retries, autosave every 2 minutes, saves on leave and on shutdown |
 | ProgressionService | Turns finished matches into wins, losses, points and coins (decided on the server); shows them in the player list and on the results screen |
+| CharacterAnimator | Body animation in code: arms that follow the ball, defense and reactions, for R15 and R6 (visual only) |
 
 ---
 
@@ -379,9 +430,9 @@ Each step is added on its own and tested before the next one starts:
 2. ~~Defense: steals, blocks, and crossovers to beat them~~ ✓
 3. ~~Layups and dunks: context finishes near the rim~~ ✓
 4. ~~Progression: wins, losses, total points and coins saved with DataStoreService, with retries and safe error handling~~ ✓
-5. ~~More courts: three themed courts with their own rules, all playable at once~~ ✓ *(this version)*
-6. **Animations** *(next)*: dribble, shot and dunk animations, made in the Animation Editor and uploaded by you
-7. **Cosmetics:** ball skins, outfits, court effects and emotes, unlocked with currency
+5. ~~More courts: three themed courts with their own rules, all playable at once~~ ✓
+6. ~~Animations: dribbling, shots, finishes, defense and reactions, done in code for R15 and R6~~ ✓ *(this version)*
+7. **Cosmetics** *(next)*: ball skins, outfits, court effects and emotes, unlocked with currency
 
 ## Updating your copy
 

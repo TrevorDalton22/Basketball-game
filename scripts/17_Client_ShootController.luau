@@ -20,7 +20,7 @@ local MatchClient = require(Client:WaitForChild("MatchClient"))
 local ShotMeter = require(Client:WaitForChild("ShotMeter"))
 
 local ShootController = {}
-ShootController.ScriptVersion = 3 -- ClientMain compares this to spot an old copy; bump when this file changes
+ShootController.ScriptVersion = 4 -- ClientMain compares this to spot an old copy; bump when this file changes
 ShootController.ScriptFile = "17_Client_ShootController" -- and this to spot another file's code pasted here
 
 local SHOT = Config.Shot
@@ -40,6 +40,10 @@ local shotToken = 0
 local lastBeganAt = -math.huge
 local finishingUntil = 0 -- a layup/dunk is on its way: no second shot or crossover
 local suppressUntil = 0 -- set by MovesController so a steal mash can't become an accidental shot
+-- Our own shot as the ball and body should show it now, before the server's
+-- attributes come back: "Jumper", "Layup" or "Dunk", until localShotUntil
+local localShotKind: string? = nil
+local localShotUntil = 0
 local touchButton: TextButton
 local touchScreenGui: ScreenGui
 local touchConnection: RBXScriptConnection? = nil
@@ -85,8 +89,11 @@ local function release(cancelled: boolean)
 	shootRelease:FireServer(hold)
 	restoreWalkSpeed()
 	if cancelled then
+		localShotKind = nil
 		ShotMeter.Cancel()
 	else
+		-- Keep the shooting pose until the server launches the ball
+		localShotUntil = os.clock() + 1
 		-- Provisional grade from our own clock; ShotMeter swaps in the server's
 		-- grade when the "Release" feedback arrives
 		local quality = BasketballMath.ClassifyRelease(hold / SHOT.FillTime)
@@ -115,6 +122,7 @@ local function begin()
 	shotToken += 1
 	shootStart:FireServer(shotToken)
 	ShotMeter.Begin(shotToken)
+	localShotKind, localShotUntil = "Jumper", math.huge
 
 	if humanoid.WalkSpeed > Config.Movement.ShootingWalkSpeed then
 		savedWalkSpeed = humanoid.WalkSpeed
@@ -221,6 +229,7 @@ local function tryFinish(): boolean
 	shotToken += 1
 	-- Tell the server which move we played; it may downgrade a dunk, never upgrade
 	finishRemote:FireServer(shotToken, kind)
+	localShotKind, localShotUntil = kind, finishingUntil
 
 	local toward = Vector3.new(rim.X - root.Position.X, 0, rim.Z - root.Position.Z)
 	jumpNow(humanoid)
@@ -392,6 +401,7 @@ function ShootController.Init()
 			-- This shot was refused: the next press may go straight away
 			finishingUntil = 0
 			lastBeganAt = -math.huge
+			localShotKind = nil
 			if holding then
 				holding = false
 				heldBall = nil
@@ -406,6 +416,7 @@ function ShootController.Init()
 		heldBall = nil
 		savedWalkSpeed = nil
 		finishingUntil = 0
+		localShotKind = nil
 		stopTrackingTouch()
 		ShotMeter.Cancel()
 	end)
@@ -414,6 +425,15 @@ end
 -- True while a jump shot is held or a layup/dunk is on its way
 function ShootController.IsHolding(): boolean
 	return holding or os.clock() < finishingUntil
+end
+
+-- The shot we're taking right now ("Jumper", "Layup" or "Dunk"), while we still
+-- hold the ball, so it shows at once instead of after the server's reply
+function ShootController.GetLocalShot(): string?
+	if localShotKind and os.clock() < localShotUntil and MatchClient.GetHeldBall() then
+		return localShotKind
+	end
+	return nil
 end
 
 -- Ignore shot presses until `untilTime` (os.clock); never shortens an existing lockout

@@ -17,8 +17,8 @@ end
 
 -- This file's version, sent to Main (which flags an old ClientMain), and the
 -- version Main must publish (an older or missing one means Main is the old copy)
-local CLIENT_MAIN_VERSION = 6
-local EXPECTED_MAIN_VERSION = 6
+local CLIENT_MAIN_VERSION = 7
+local EXPECTED_MAIN_VERSION = 7
 
 local MAIN_WHERE = "ServerScriptService > Server > Main"
 local CLIENT_MAIN_WHERE = "StarterPlayer > StarterPlayerScripts > ClientMain"
@@ -118,17 +118,18 @@ local CLIENT_PATH = CLIENT_MAIN_WHERE .. " > "
 -- Main checks the server modules the same way.
 type Module = { Name: string, Parent: Instance, Where: string, File: string, Version: number, Uses: { string } }
 local MODULES: { Module } = {
-	{ Name = "Config", Parent = Shared, Where = "ReplicatedStorage > Shared > Config", File = "01_Shared_Config", Version = 4, Uses = {} },
+	{ Name = "Config", Parent = Shared, Where = "ReplicatedStorage > Shared > Config", File = "01_Shared_Config", Version = 5, Uses = {} },
 	{ Name = "Signal", Parent = Shared, Where = "ReplicatedStorage > Shared > Signal", File = "02_Shared_Signal", Version = 1, Uses = {} },
 	{ Name = "Net", Parent = Shared, Where = "ReplicatedStorage > Shared > Net", File = "03_Shared_Net", Version = 3, Uses = {} },
 	{ Name = "BasketballMath", Parent = Shared, Where = "ReplicatedStorage > Shared > BasketballMath", File = "04_Shared_BasketballMath", Version = 1, Uses = { "Config" } },
 	{ Name = "UIKit", Parent = script, Where = CLIENT_PATH .. "UIKit", File = "14_Client_UIKit", Version = 1, Uses = { "Config" } },
 	{ Name = "MatchClient", Parent = script, Where = CLIENT_PATH .. "MatchClient", File = "15_Client_MatchClient", Version = 2, Uses = { "Signal", "Config", "BasketballMath" } },
 	{ Name = "ShotMeter", Parent = script, Where = CLIENT_PATH .. "ShotMeter", File = "16_Client_ShotMeter", Version = 1, Uses = { "Config", "Net", "UIKit" } },
-	{ Name = "ShootController", Parent = script, Where = CLIENT_PATH .. "ShootController", File = "17_Client_ShootController", Version = 3, Uses = { "Config", "Net", "BasketballMath", "UIKit", "MatchClient", "ShotMeter" } },
-	{ Name = "BallVisuals", Parent = script, Where = CLIENT_PATH .. "BallVisuals", File = "18_Client_BallVisuals", Version = 3, Uses = { "Config", "UIKit", "MatchClient" } },
+	{ Name = "ShootController", Parent = script, Where = CLIENT_PATH .. "ShootController", File = "17_Client_ShootController", Version = 4, Uses = { "Config", "Net", "BasketballMath", "UIKit", "MatchClient", "ShotMeter" } },
+	{ Name = "BallVisuals", Parent = script, Where = CLIENT_PATH .. "BallVisuals", File = "18_Client_BallVisuals", Version = 4, Uses = { "Config", "Signal", "UIKit", "MatchClient", "ShootController" } },
 	{ Name = "Hud", Parent = script, Where = CLIENT_PATH .. "Hud", File = "19_Client_Hud", Version = 4, Uses = { "Config", "Net", "UIKit", "MatchClient" } },
-	{ Name = "MovesController", Parent = script, Where = CLIENT_PATH .. "MovesController", File = "21_Client_MovesController", Version = 2, Uses = { "Config", "Net", "UIKit", "MatchClient", "ShootController" } },
+	{ Name = "MovesController", Parent = script, Where = CLIENT_PATH .. "MovesController", File = "21_Client_MovesController", Version = 3, Uses = { "Config", "Net", "Signal", "UIKit", "MatchClient", "ShootController" } },
+	{ Name = "CharacterAnimator", Parent = script, Where = CLIENT_PATH .. "CharacterAnimator", File = "24_Client_CharacterAnimator", Version = 1, Uses = { "Config", "MatchClient", "ShootController", "MovesController", "BallVisuals" } },
 }
 local entryByName: { [string]: Module } = {}
 for _, entry in MODULES do
@@ -136,8 +137,9 @@ for _, entry in MODULES do
 end
 
 -- Start order matters: MovesController after ShootController so the
--- steal/crossover keys get first look when they apply
-local START_ORDER = { "MatchClient", "Hud", "ShotMeter", "ShootController", "MovesController", "BallVisuals" }
+-- steal/crossover keys get first look when they apply; CharacterAnimator last
+-- (it only watches the others)
+local START_ORDER = { "MatchClient", "Hud", "ShotMeter", "ShootController", "MovesController", "BallVisuals", "CharacterAnimator" }
 
 local found: { [string]: ModuleScript } = {}
 local findDeadline = os.clock() + 10
@@ -161,6 +163,7 @@ local requireModule: any = require -- the modules are found at run time
 local LOAD_TIME = 5 -- correct modules load instantly (everything they wait for exists)
 local loaded: { [string]: any } = {}
 local failed: { [string]: boolean } = {}
+local stale: { [string]: boolean } = {} -- loaded, but an old copy
 for _, entry in MODULES do
 	-- A module that uses a broken one can't load either: report only the cause
 	local cause: string? = nil
@@ -217,6 +220,7 @@ for _, entry in MODULES do
 	loaded[entry.Name] = result
 	local actual = if typeof(result) == "table" and typeof(result.ScriptVersion) == "number" then result.ScriptVersion else 1
 	if actual < entry.Version then
+		stale[entry.Name] = true
 		problem(("%s is an old copy (version %d, needs %d). Paste scripts/%s.luau into %s again."):format(entry.Name, actual, entry.Version, entry.File, entry.Where))
 	elseif actual > entry.Version then
 		problem(("%s is newer than this ClientMain expects, so ClientMain is the old copy. Paste scripts/13_Client_ClientMain.luau into %s again."):format(entry.Name, CLIENT_MAIN_WHERE))
@@ -258,6 +262,20 @@ for _, name in START_ORDER do
 	local module = loaded[name]
 	if module == nil then
 		continue -- already reported while loading
+	end
+	-- Code written for the current copy of a module it uses would only error
+	-- (every frame, burying the real problem): hold it back until that's fixed
+	local oldCopy: string? = nil
+	for _, used in entryByName[name].Uses do
+		if stale[used] then
+			oldCopy = used
+			break
+		end
+	end
+	if oldCopy then
+		stale[name] = true -- and anything that uses this one waits too
+		warn(("%s ✗ %s didn't start because %s, which it uses, is an old copy (fix that one)."):format(TAG, name, oldCopy))
+		continue
 	end
 	if typeof(module) ~= "table" or typeof(module.Init) ~= "function" then
 		local entry = entryByName[name]

@@ -10,14 +10,20 @@ local RunService = game:GetService("RunService")
 
 local Shared = ReplicatedStorage:WaitForChild("Shared")
 local Config = require(Shared:WaitForChild("Config"))
+local Signal = require(Shared:WaitForChild("Signal"))
 
 local Client = script.Parent
 local UIKit = require(Client:WaitForChild("UIKit"))
 local MatchClient = require(Client:WaitForChild("MatchClient"))
+local ShootController = require(Client:WaitForChild("ShootController"))
 
 local BallVisuals = {}
-BallVisuals.ScriptVersion = 3 -- Main/ClientMain compare this to spot an old copy; bump when this file changes
+BallVisuals.ScriptVersion = 4 -- Main/ClientMain compare this to spot an old copy; bump when this file changes
 BallVisuals.ScriptFile = "18_Client_BallVisuals" -- and this to spot another file's code pasted here
+
+-- Fires (dt) every frame straight after the balls are placed, so
+-- CharacterAnimator can put the hands where the ball is this frame
+BallVisuals.Stepped = Signal.new()
 
 local BALL = Config.Ball
 local localPlayer = Players.LocalPlayer
@@ -166,13 +172,23 @@ local function updateVisual(v: Visual, dt: number)
 		return
 	end
 
+	-- Our own shot shows the moment we press; everyone else's when the server says
+	local shooting = ball:GetAttribute("Shooting") == true
+	local finish = ball:GetAttribute("Finish")
+	if holder == localPlayer then
+		local localShot = ShootController.GetLocalShot()
+		if localShot then
+			shooting = true
+			finish = if localShot == "Jumper" then "" else localShot
+		end
+	end
 	local target: CFrame
-	if ball:GetAttribute("Shooting") == true then
-		local finish = ball:GetAttribute("Finish")
+	if shooting then
 		if finish == "Dunk" then
 			target = BALL.DunkPoseOffset -- cocked high, out in front
 		elseif finish == "Layup" then
-			target = BALL.LayupPoseOffset
+			local pose = BALL.LayupPoseOffset
+			target = CFrame.new(pose.X * v.HandSide, pose.Y, pose.Z) -- up in the ball hand
 		else
 			local pose = BALL.ShootPoseOffset
 			target = CFrame.new(pose.X * v.HandSide, pose.Y, pose.Z)
@@ -191,7 +207,7 @@ local function updateVisual(v: Visual, dt: number)
 		target = CFrame.new(hold.X * v.HandSide, y, hold.Z)
 	end
 	-- Ease toward the shot pose, snap for the dribble so the bounce stays crisp
-	local alpha = if ball:GetAttribute("Shooting") == true then math.clamp(dt * 14, 0, 1) else 1
+	local alpha = if shooting then math.clamp(dt * 14, 0, 1) else 1
 	v.CurrentOffset = v.CurrentOffset:Lerp(target, alpha)
 	weld.C0 = v.CurrentOffset
 end
@@ -199,10 +215,13 @@ end
 function BallVisuals.Init()
 	MatchClient.Changed:Connect(ensureVisuals)
 	ensureVisuals()
-	RunService.RenderStepped:Connect(function(dt)
+	-- PreSimulation: after Roblox's animations, which is when the body can be
+	-- posed (CharacterAnimator does that from Stepped, right after this)
+	RunService.PreSimulation:Connect(function(dt)
 		for _, v in visuals do
 			updateVisual(v, dt)
 		end
+		BallVisuals.Stepped:Fire(dt)
 	end)
 end
 

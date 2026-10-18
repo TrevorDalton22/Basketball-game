@@ -4,7 +4,7 @@
 -- but only the server's copy is ever trusted for gameplay decisions.
 
 local Config = {}
-Config.ScriptVersion = 4 -- Main/ClientMain compare this to spot an old copy; bump when this file changes
+Config.ScriptVersion = 5 -- Main/ClientMain compare this to spot an old copy; bump when this file changes
 Config.ScriptFile = "01_Shared_Config" -- and this to spot another file's code pasted here
 
 -- Court geometry, in studs. Each court is a half court: the local origin is the
@@ -93,10 +93,11 @@ Config.Ball = {
 
 	-- Where the ball sits relative to the HumanoidRootPart while held
 	HoldOffset = CFrame.new(1.05, -0.6, -1.35),
-	-- Cosmetic only (client): ball raised for the shot, layup and dunk
-	ShootPoseOffset = CFrame.new(0.35, 2.3, -0.7),
-	LayupPoseOffset = CFrame.new(0.6, 2.6, -1.4),
-	DunkPoseOffset = CFrame.new(0, 3.4, -1.6),
+	-- Cosmetic only (client): ball raised for the shot, layup and dunk (kept
+	-- within arm's reach, since the hands follow it)
+	ShootPoseOffset = CFrame.new(0.3, 2, -0.8),
+	LayupPoseOffset = CFrame.new(0.6, 2.4, -1.2),
+	DunkPoseOffset = CFrame.new(0, 2, -1),
 	-- Cosmetic only (client): dribble bounce while moving
 	DribbleFloorOffset = -2.3, -- relative to HRP, roughly the floor
 	DribbleRate = 2.4, -- bounces per second at full run
@@ -279,6 +280,24 @@ Config.Movement = {
 	WalkSpeed = 18,
 	JumpHeight = 7.2,
 	ShootingWalkSpeed = 5, -- cosmetic slow-down while holding a shot (client)
+}
+
+-- Body animation (client only, cosmetic): arms that follow the ball, defense
+-- and reactions, layered on Roblox's own walk/run/jump. Every client poses the
+-- characters near it; none of this affects gameplay.
+Config.Animation = {
+	Enabled = true, -- false: plain Roblox animations only
+	MaxDistance = 150, -- characters farther than this from the camera aren't posed
+	BlendIn = 10, -- how fast a pose takes over from the normal animation (per second)
+	BlendOut = 6, -- how fast it hands back
+	HeadLook = true, -- heads turn to follow the ball (and the rim when shooting)
+	DribbleLean = 14, -- degrees of forward lean while dribbling at full speed
+	DribbleHandTravel = 0.7, -- how far (studs) the hand pumps down with each bounce
+	FollowThroughTime = 0.6, -- jump shot and layup: arm held up after the release
+	RimHangTime = 0.9, -- dunk: hanging on the rim, at most this long
+	ReachTime = 0.3, -- steal reach
+	FistPumpTime = 0.9, -- after scoring
+	StanceRange = 14, -- guarding the ball carrier within this distance: arms out
 }
 
 -- Collision groups (registered by CharacterService on the server)

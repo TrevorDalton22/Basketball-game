@@ -18,6 +18,7 @@ local MatchService = require(Server:WaitForChild("MatchService"))
 local RemoteGuard = require(Server:WaitForChild("RemoteGuard"))
 
 local MovesService = {}
+MovesService.ScriptVersion = 2 -- Main compares this to spot an old copy; bump when this file changes
 MovesService.ScriptFile = "20_Server_MovesService" -- Main/ClientMain compare this to spot another file's code pasted here
 
 local DEFENSE = Config.Defense
@@ -28,6 +29,15 @@ local lastCrossover: { [Player]: number } = {}
 local immuneUntil: { [Player]: number } = {} -- steal-proof window after a crossover
 local rng = Random.new()
 local feedback: RemoteEvent
+local moveSerial = 0
+
+-- Tell every client a move happened, so each can animate it on that player
+-- (a new value every time, e.g. "Reach:12"). Cosmetic only.
+local MOVE_ATTRIBUTE = "StreetHoopsMove"
+local function publishMove(player: Player, name: string)
+	moveSerial += 1
+	player:SetAttribute(MOVE_ATTRIBUTE, ("%s:%d"):format(name, moveSerial))
+end
 
 local function flat(v: Vector3): Vector3
 	return Vector3.new(v.X, 0, v.Z)
@@ -61,6 +71,7 @@ local function onSteal(player: Player)
 		return
 	end
 	lastSteal[player] = now
+	publishMove(player, "Reach")
 
 	-- A miss slows you, and you can't scoop up a loose ball until you recover
 	-- (the server enforces that part even if a client ignores the slow-down)
@@ -90,6 +101,7 @@ local function onSteal(player: Player)
 	local immune = immuneUntil[opponent]
 	if immune and immune > now then
 		penalise(DEFENSE.AnklesSlowTime, DEFENSE.AnklesSpeed)
+		publishMove(player, "Ankles")
 		tellBoth(player, opponent, "Ankles", { DefenderUserId = player.UserId, HandlerUserId = opponent.UserId })
 		return
 	end
