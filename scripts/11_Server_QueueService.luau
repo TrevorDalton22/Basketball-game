@@ -17,6 +17,7 @@ local MatchService = require(Server:WaitForChild("MatchService"))
 local RemoteGuard = require(Server:WaitForChild("RemoteGuard"))
 
 local QueueService = {}
+QueueService.ScriptVersion = 2 -- Main compares this to spot an old copy; bump when this file changes
 QueueService.ScriptFile = "11_Server_QueueService" -- Main/ClientMain compare this to spot another file's code pasted here
 
 local QUEUE = Config.Queue
@@ -90,7 +91,7 @@ local function publish(queue: Queue)
 		else
 			pad.Color = teamColor
 			pad.Transparency = 0.15
-			label.Text = (if side == "Home" then "HOME" else "AWAY") .. " · 1V1"
+			label.Text = court.PadIdleText[side]
 		end
 	end
 end

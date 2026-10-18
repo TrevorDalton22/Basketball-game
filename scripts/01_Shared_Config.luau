@@ -4,7 +4,7 @@
 -- but only the server's copy is ever trusted for gameplay decisions.
 
 local Config = {}
-Config.ScriptVersion = 3 -- Main/ClientMain compare this to spot an old copy; bump when this file changes
+Config.ScriptVersion = 4 -- Main/ClientMain compare this to spot an old copy; bump when this file changes
 Config.ScriptFile = "01_Shared_Config" -- and this to spot another file's code pasted here
 
 -- Court geometry, in studs. Each court is a half court: the local origin is the
@@ -39,10 +39,42 @@ Config.Court = {
 	DefenseSpot = Vector3.new(0, 0, 24),
 }
 
--- Courts that exist in the park. Phase 3 has one; add entries to add courts.
-Config.Courts = {
-	{ Id = "Court1", DisplayName = "COURT 1", Position = Vector3.new(0, 0, 0), Yaw = 0 },
+-- Courts in the park. Each has its own pads, ball and match, all at once.
+-- Court1 anchors the lobby (spawn and arch), so keep it first. To add a court:
+-- give it a new Id, a Position/Yaw that doesn't overlap the others (the server
+-- refuses to start if courts overlap), a Theme, and Rules (empty = the
+-- standard game in Config.Match). Yaw turns the court so its pads face the
+-- spawn; see README > Tuning.
+export type CourtTheme = { Name: string, Floor: Color3, Key: Color3, Runoff: Color3, Accent: Color3 }
+export type CourtRules = { TargetScore: number?, Duration: number? }
+export type CourtDef = { Id: string, DisplayName: string, Position: Vector3, Yaw: number, Theme: CourtTheme, Rules: CourtRules }
+local courts: { CourtDef } = {
+	{
+		Id = "Court1",
+		DisplayName = "COURT 1",
+		Position = Vector3.new(0, 0, 0),
+		Yaw = 0,
+		Theme = { Name = "THE PARK", Floor = Color3.fromRGB(38, 94, 160), Key = Color3.fromRGB(214, 98, 44), Runoff = Color3.fromRGB(34, 52, 74), Accent = Color3.fromRGB(255, 196, 64) },
+		Rules = {}, -- the standard game: first to 15, 4 minutes
+	},
+	{
+		Id = "Court2",
+		DisplayName = "COURT 2",
+		Position = Vector3.new(-112, 0, 52),
+		Yaw = 77,
+		Theme = { Name = "THE CAGE", Floor = Color3.fromRGB(58, 62, 70), Key = Color3.fromRGB(178, 40, 48), Runoff = Color3.fromRGB(28, 30, 36), Accent = Color3.fromRGB(240, 72, 72) },
+		Rules = { TargetScore = 11, Duration = 180 }, -- a quick game
+	},
+	{
+		Id = "Court3",
+		DisplayName = "COURT 3",
+		Position = Vector3.new(112, 0, 52),
+		Yaw = -77,
+		Theme = { Name = "SUNSET", Floor = Color3.fromRGB(190, 116, 54), Key = Color3.fromRGB(116, 46, 98), Runoff = Color3.fromRGB(70, 38, 54), Accent = Color3.fromRGB(255, 160, 64) },
+		Rules = { TargetScore = 21, Duration = 300 }, -- a long game
+	},
 }
+Config.Courts = courts
 
 Config.Lobby = {
 	-- Spawn point relative to the first court's origin (in front of the half-court line)
@@ -210,10 +242,13 @@ Config.Players = {
 
 Config.Progression = {
 	-- Coins for a match that counts, plus PerPoint for every point you scored
-	-- (up to MaxPointCoins). Practice never counts.
+	-- (up to MaxPointCoins). Practice never counts. Win/Loss/Draw scale with the
+	-- court's target score (first to 11 pays 11/15 of these), so no court pays
+	-- more per minute.
 	Rewards = { Win = 30, Loss = 10, Draw = 15, PerPoint = 1, MaxPointCoins = 20 },
 	-- A forfeit or cancel before this much game clock has run counts for
-	-- nobody (stops two accounts farming wins by quitting straight away)
+	-- nobody (stops two accounts farming wins by quitting straight away).
+	-- Keep it below the shortest court's Duration.
 	MinPlayedSeconds = 45,
 	-- Saving (DataStoreService)
 	StoreName = "StreetHoops_PlayerData_v1", -- changing it starts everyone from zero

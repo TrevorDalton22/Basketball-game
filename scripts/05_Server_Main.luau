@@ -19,8 +19,8 @@ end
 
 -- This file's version, published first so ClientMain can tell when Main is the
 -- old copy, and the version ClientMain must check in with (see the end)
-local MAIN_VERSION = 5
-local CLIENT_MAIN_VERSION = 5
+local MAIN_VERSION = 6
+local CLIENT_MAIN_VERSION = 6
 ReplicatedStorage:SetAttribute("StreetHoopsMainVersion", MAIN_VERSION)
 
 --------------------------------------------------------------------------------
@@ -33,18 +33,18 @@ type Expected = { Path: { string }, Class: string, File: string?, Version: numbe
 
 local EXPECTED: { Expected } = {
 	{ Path = { "ReplicatedStorage", "Shared" }, Class = "Folder" },
-	{ Path = { "ReplicatedStorage", "Shared", "Config" }, Class = "ModuleScript", File = "01_Shared_Config", Version = 3 },
+	{ Path = { "ReplicatedStorage", "Shared", "Config" }, Class = "ModuleScript", File = "01_Shared_Config", Version = 4 },
 	{ Path = { "ReplicatedStorage", "Shared", "Signal" }, Class = "ModuleScript", File = "02_Shared_Signal", Version = 1 },
 	{ Path = { "ReplicatedStorage", "Shared", "Net" }, Class = "ModuleScript", File = "03_Shared_Net", Version = 3 },
 	{ Path = { "ReplicatedStorage", "Shared", "BasketballMath" }, Class = "ModuleScript", File = "04_Shared_BasketballMath", Version = 1 },
 	{ Path = { "ServerScriptService", "Server" }, Class = "Folder" },
 	{ Path = { "ServerScriptService", "Server", "Main" }, Class = "Script", File = "05_Server_Main" },
-	{ Path = { "ServerScriptService", "Server", "CharacterService" }, Class = "ModuleScript", File = "06_Server_CharacterService", Version = 2 },
+	{ Path = { "ServerScriptService", "Server", "CharacterService" }, Class = "ModuleScript", File = "06_Server_CharacterService", Version = 3 },
 	{ Path = { "ServerScriptService", "Server", "RemoteGuard" }, Class = "ModuleScript", File = "07_Server_RemoteGuard", Version = 1 },
-	{ Path = { "ServerScriptService", "Server", "CourtBuilder" }, Class = "ModuleScript", File = "08_Server_CourtBuilder", Version = 2 },
+	{ Path = { "ServerScriptService", "Server", "CourtBuilder" }, Class = "ModuleScript", File = "08_Server_CourtBuilder", Version = 3 },
 	{ Path = { "ServerScriptService", "Server", "BallService" }, Class = "ModuleScript", File = "09_Server_BallService", Version = 2 },
-	{ Path = { "ServerScriptService", "Server", "MatchService" }, Class = "ModuleScript", File = "10_Server_MatchService", Version = 3 },
-	{ Path = { "ServerScriptService", "Server", "QueueService" }, Class = "ModuleScript", File = "11_Server_QueueService", Version = 1 },
+	{ Path = { "ServerScriptService", "Server", "MatchService" }, Class = "ModuleScript", File = "10_Server_MatchService", Version = 4 },
+	{ Path = { "ServerScriptService", "Server", "QueueService" }, Class = "ModuleScript", File = "11_Server_QueueService", Version = 2 },
 	{ Path = { "ServerScriptService", "Server", "ShotService" }, Class = "ModuleScript", File = "12_Server_ShotService", Version = 3 },
 	{ Path = { "StarterPlayer", "StarterPlayerScripts", "ClientMain" }, Class = "LocalScript", File = "13_Client_ClientMain" },
 	{ Path = { "StarterPlayer", "StarterPlayerScripts", "ClientMain", "UIKit" }, Class = "ModuleScript", File = "14_Client_UIKit" },
@@ -56,7 +56,7 @@ local EXPECTED: { Expected } = {
 	{ Path = { "ServerScriptService", "Server", "MovesService" }, Class = "ModuleScript", File = "20_Server_MovesService", Version = 1 },
 	{ Path = { "StarterPlayer", "StarterPlayerScripts", "ClientMain", "MovesController" }, Class = "ModuleScript", File = "21_Client_MovesController" },
 	{ Path = { "ServerScriptService", "Server", "DataService" }, Class = "ModuleScript", File = "22_Server_DataService", Version = 2 },
-	{ Path = { "ServerScriptService", "Server", "ProgressionService" }, Class = "ModuleScript", File = "23_Server_ProgressionService", Version = 1 },
+	{ Path = { "ServerScriptService", "Server", "ProgressionService" }, Class = "ModuleScript", File = "23_Server_ProgressionService", Version = 2 },
 }
 
 local SEARCH_ROOTS = { "Workspace", "ReplicatedStorage", "ReplicatedFirst", "ServerScriptService", "ServerStorage", "StarterPlayer", "StarterGui", "StarterPack", "Lighting" }

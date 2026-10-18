@@ -22,11 +22,19 @@ This is a standalone project. It isn't connected to any other game.
 
 ## What's in this version
 
-**Phase 5, step 3: progression** (after 1v1 defense and layups/dunks), built on the Phase 3 prototype
+**Phase 5, step 4: more courts** (after 1v1 defense, layups/dunks and progression), built on the Phase 3 prototype
 
 - **Street park:** grass, a concrete plaza, trees, benches, floodlights, a STREET HOOPS entrance arch and a sunset lighting setup. It's all built by script when the server starts.
-- **One 1v1 half court:** painted floor, key, three-point line with corners, a glass backboard, a physical rim (the ball can bounce off it), a net, a fence and a live status sign.
-- **Queue pads:** stand on the blue **HOME** or red **AWAY** pad. When both are taken, the match starts after 2 seconds. You can step off or press **LEAVE** at any time. While a court is in a game its pads show **IN GAME**, and anyone who walks onto the court is moved off.
+- **Three 1v1 half courts, all playable at once,** each with its own look and rules:
+
+  | Court | Look | Game |
+  |---|---|---|
+  | **COURT 1 · THE PARK** | Blue and orange, straight ahead from the spawn | First to 15, 4-minute clock |
+  | **COURT 2 · THE CAGE** | Dark asphalt and red, to the left | Quick game: first to 11, 3 minutes |
+  | **COURT 3 · SUNSET** | Warm orange and purple, to the right | Long game: first to 21, 5 minutes |
+
+  Each has a painted floor, key, three-point line with corners, a glass backboard, a physical rim (the ball can bounce off it), a net, a fence with one entrance facing the lobby, and a live sign that shows the court's rules or its score. Signs on the arch point to Court 2 and Court 3. Each court has its own pads, ball and practice mode.
+- **Queue pads:** stand on a court's blue **HOME** or red **AWAY** pad (each says which court it belongs to). When both are taken, the match starts after 2 seconds. If someone is already waiting alone on another court, the hint tells you where, so you can go and play them. You can step off or press **LEAVE** at any time. While a court is in a game its pads show **IN GAME**, and anyone who walks onto the court is moved off.
 - **Ball possession:** walk into a loose ball to pick it up. Only one player can hold it at a time, and the server decides who has it.
 - **Timed shooting:** hold the shoot button and release when the meter is in the green. The release decides the shot: early means short, late means long or off the glass, and perfect almost always goes in. A defender standing in front of you lowers your chances.
 - **Layups and dunks:** drive at the rim and press shoot. There's no meter; it happens on the press. Running hard from close in is a **dunk**: you leap at the hoop, slam it and drop down in front of the rim. Dunks almost always go in and are very hard to block. A defender standing in your path can stop you short, and then the dunk becomes a layup. Driving from a bit further out, or more slowly, is a **layup**: a quick hop and a soft finish. Layups go in often, but a defender in front can contest them, or jump to block them in the short moment before the ball leaves your hands. It only counts as a drive once you've been moving at the rim for a moment, so a quick first step or a sudden cut still gives you the jump shot. If a layup can't happen (for example you ran past the rim), a message says why. Standing still near the rim still gives you the normal jump shot with the meter, and so does driving along the baseline under the backboard (where shots aren't allowed).
@@ -42,7 +50,7 @@ This is a standalone project. It isn't connected to any other game.
   - **Out of bounds:** a ball or ball carrier that goes out is a turnover.
   - **Results screen:** shown at the end, then both players go back to the lobby.
 - **Leaving and resetting:** leaving the game or pressing **LEAVE MATCH** twice forfeits. Resetting your character is a turnover, and play waits up to 15 seconds for you to respawn. A shot already in the air still lands and counts. Resetting more than 3 times in one match forfeits it.
-- **Progression, saved between sessions:** every match that counts adds to your **wins**, **losses**, **draws**, **games played**, **points scored** and **coins**. A win earns 30 coins, a draw 15 and a loss 10, plus 1 coin per point you scored (up to 20 more). The results screen shows what you earned and your record, and the Roblox player list shows everyone's **Wins** and **Coins**. Practice never counts. Leaving a match counts as a loss with no coins, but a match that ends in its first 45 seconds of game clock (a forfeit or cancel) counts for nobody. Saving needs Step 7 below; until then stats count for the session only, and the game tells you so.
+- **Progression, saved between sessions:** every match that counts adds to your **wins**, **losses**, **draws**, **games played**, **points scored** and **coins**. A win earns 30 coins, a draw 15 and a loss 10 on a first-to-15 court (scaled to the court's target, so first to 11 pays 22 for a win and first to 21 pays 42), plus 1 coin per point you scored (up to 20 more). The results screen shows what you earned and your record, and the Roblox player list shows everyone's **Wins** and **Coins**. Practice never counts. Leaving a match counts as a loss with no coins, but a match that ends in its first 45 seconds of game clock (a forfeit or cancel) counts for nobody. Saving needs Step 7 below; until then stats count for the session only, and the game tells you so.
 - **No shots from behind or right beside the backboard:** the glass is in the way, so the shot is refused and a message says why.
 - **Practice mode:** when a court has no match, anyone can shoot around with its ball. No points count.
 - **HUD:** scoreboard with a possession dot, shot clock, shot meter, queue panel, banners, toasts, results and context hints. Works on **PC, phone and controller**.
@@ -223,6 +231,16 @@ Skipping this is fine for trying the game: stats still count for the session, an
    - [ ] While a match is running, the pads say **IN GAME**, and walking onto the court sends you back.
 5. Click **Cleanup** (the red square in the Test tab) to stop.
 
+### Several courts at once
+
+1. In **Clients and Servers**, pick **4 Players** and click **Start**.
+2. Put Player1 and Player2 on **COURT 2**'s pads (left of the arch) and Player3 and Player4 on **COURT 3**'s pads (right). Both matches start and run at the same time.
+3. What to check:
+   - [ ] COURT 2's scoreboard says **COURT 2 · FIRST TO 11** and its clock starts at **3:00**; COURT 3 says **FIRST TO 21** and **5:00**.
+   - [ ] Walking a player from one match onto the other court sends them straight back to their own court with *"Your match is on COURT 2"*.
+   - [ ] With only one player on a pad, the others' hint says *"… is waiting on COURT 2"*.
+   - [ ] Winning on COURT 2 shows *+22 coins* (plus points), not +30.
+
 ### Phone and controller
 
 - **Phone:** in the **Test** tab, use **Device** emulation and pick a phone. Press Play. While you hold the ball, a **SHOOT** button appears next to the jump button.
@@ -255,9 +273,19 @@ Every gameplay number is in **ReplicatedStorage › Shared › Config**. The mos
 | `Defense.StealCooldown` | 1.4 | Seconds between steal attempts |
 | `Defense.BlockRange` / `BlockChance` | 6.5 / 0.8 | How close a jumping defender must be, and how often it blocks |
 | `Moves.CrossoverCooldown` / `CrossoverImmunity` | 1.1 / 0.45 | Crossover spacing and its steal-proof window |
-| `Progression.Rewards` | Win 30 / Loss 10 / Draw 15, +1 per point (max 20) | Coins for a match that counts |
+| `Progression.Rewards` | Win 30 / Loss 10 / Draw 15, +1 per point (max 20) | Coins for a match that counts (Win/Loss/Draw scale with the court's target score) |
 | `Progression.MinPlayedSeconds` | 45 | A forfeit or cancel before this much game clock counts for nobody |
 | `Progression.StoreName` | `StreetHoops_PlayerData_v1` | DataStore name. Changing it starts everyone from zero |
+
+**Courts** are the entries in `Config.Courts`. Each one has:
+
+- `Id`: unique, for example `"Court4"`.
+- `DisplayName`: shown on its sign, pads and HUD, for example `"COURT 4"`.
+- `Position` and `Yaw`: where it stands and which way it faces. The pads are on its front (local +Z), so turn it to face the spawn. `Yaw` is the angle `atan2(spawn.X − Position.X, spawn.Z − Position.Z)` in degrees; the spawn is at (0, 0, 78).
+- `Theme`: a `Name` plus `Floor`, `Key`, `Runoff` and `Accent` colours.
+- `Rules`: `TargetScore` and/or `Duration` in seconds. Leave it as `{}` for the standard game.
+
+Keep `Court1` first, because it anchors the lobby. If two courts overlap, or two share an `Id`, the server won't start and the SETUP PROBLEM sign says which ones. Side by side they need roughly 110 studs between centres.
 
 ## Troubleshooting
 
@@ -277,6 +305,7 @@ Every gameplay number is in **ReplicatedStorage › Shared › Config**. The mos
 |---|---|
 | You fall forever and there's no map | `Main` isn't running. See the four checks above. |
 | A **SETUP PROBLEM** sign on a grey floor, or a dark **STREET HOOPS SETUP PROBLEM** box on screen | Read the numbered lines and fix each one (usually: paste one script again). |
+| `Config.Courts: … is too close to …` or `two courts are called …` | A court you added or moved overlaps another, or reuses an `Id`. See **Courts** under Tuning. |
 | Pressing **E** does nothing at all | A script was missed in the last update. Press Play and look for the **SETUP PROBLEM** box or `✗` lines in Output; they name the file to paste again. |
 | `… failed to load`, `… is still loading after 5 seconds`, or `… holds the code from scripts/…` | That script's code is incomplete or from another file. Paste the named file into it again (Ctrl+A in the script, then Ctrl+V). For a load error, the red line just above in Output is the script's own error. |
 | No HUD or meter (but the map is there) | `ClientMain` is disabled or is an old copy. After 30 seconds in Studio (90 on a live server) the server says which on screen (*"ClientMain is disabled…"* or *"ClientMain didn't start, or is an old copy…"*). If `ClientMain` isn't a LocalScript, or modules 14–19 and 21 aren't its direct children, the setup check catches it instead and you get the SETUP PROBLEM sign. |
@@ -347,9 +376,9 @@ Each step is added on its own and tested before the next one starts:
 1. ~~Phase 3/4: playable prototype, tested in Studio~~ ✓
 2. ~~Defense: steals, blocks, and crossovers to beat them~~ ✓
 3. ~~Layups and dunks: context finishes near the rim~~ ✓
-4. ~~Progression: wins, losses, total points and coins saved with DataStoreService, with retries and safe error handling~~ ✓ *(this version)*
-5. **More courts:** add entries to `Config.Courts` *(next)*
-6. **Animations:** dribble, shot and dunk animations, made in the Animation Editor and uploaded by you
+4. ~~Progression: wins, losses, total points and coins saved with DataStoreService, with retries and safe error handling~~ ✓
+5. ~~More courts: three themed courts with their own rules, all playable at once~~ ✓ *(this version)*
+6. **Animations** *(next)*: dribble, shot and dunk animations, made in the Animation Editor and uploaded by you
 7. **Cosmetics:** ball skins, outfits, court effects and emotes, unlocked with currency
 
 ## Updating your copy

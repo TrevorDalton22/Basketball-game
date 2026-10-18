@@ -13,7 +13,7 @@ local Config = require(Shared:WaitForChild("Config"))
 local Signal = require(Shared:WaitForChild("Signal"))
 
 local CharacterService = {}
-CharacterService.ScriptVersion = 2 -- Main/ClientMain compare this to spot an old copy; bump when this file changes
+CharacterService.ScriptVersion = 3 -- Main/ClientMain compare this to spot an old copy; bump when this file changes
 CharacterService.ScriptFile = "06_Server_CharacterService" -- and this to spot another file's code pasted here
 
 local GROUPS = Config.Collision
@@ -68,6 +68,13 @@ local function setupCollisionGroups()
 	-- Players never snag on the ring or net (dunks), but still hit the glass and pole
 	for _, body in { GROUPS.Players, GROUPS.InMatch } do
 		PhysicsService:CollisionGroupSetCollidable(body, GROUPS.Rim, false)
+	end
+	-- Each court has one ball, so balls never need to touch: one court's stray
+	-- ball can't knock another court's ball around
+	for _, a in { GROUPS.Ball, GROUPS.BallMake } do
+		for _, b in { GROUPS.Ball, GROUPS.BallMake } do
+			PhysicsService:CollisionGroupSetCollidable(a, b, false)
+		end
 	end
 end
 

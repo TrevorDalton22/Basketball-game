@@ -26,7 +26,7 @@ local CharacterService = require(Server:WaitForChild("CharacterService"))
 local RemoteGuard = require(Server:WaitForChild("RemoteGuard"))
 
 local MatchService = {}
-MatchService.ScriptVersion = 3 -- Main/ClientMain compare this to spot an old copy; bump when this file changes
+MatchService.ScriptVersion = 4 -- Main/ClientMain compare this to spot an old copy; bump when this file changes
 MatchService.ScriptFile = "10_Server_MatchService" -- and this to spot another file's code pasted here
 
 export type Side = "Home" | "Away"
@@ -45,10 +45,16 @@ export type MatchResult = {
 	Home: Player?, -- still set when that player just left the game
 	Away: Player?,
 	Played: number, -- seconds of game clock that ran (overtime counts as the full clock)
+	TargetScore: number, -- this court's rules
+	Duration: number,
 }
+
+-- A court's rules: Config.Match with the court's own Rules on top
+export type Rules = { TargetScore: number, Duration: number }
 
 export type CourtState = {
 	Court: any, -- CourtBuilder.CourtHandle
+	Rules: Rules,
 	Ball: any, -- BallService.Ball
 	State: MatchState,
 	PhaseEndsAt: number,
@@ -82,7 +88,7 @@ local MATCH = Config.Match
 local COURT = Config.Court
 
 local courtStates: { CourtState } = {}
-local stateByCourtId: { [string]: CourtState } = {}
+local stateByBall: { [any]: CourtState } = {}
 local playerCourt: { [Player]: CourtState } = {}
 local nextMatchId = 0
 local sweepTimer = 0
@@ -132,11 +138,15 @@ local function tell(cs: CourtState, kind: string, data: { [string]: any })
 	end
 end
 
+local function rulesText(cs: CourtState): string
+	return ("FIRST TO %d · %d MIN"):format(cs.Rules.TargetScore, math.floor(cs.Rules.Duration / 60 + 0.5))
+end
+
 local function updateSign(cs: CourtState)
 	local name = cs.Court.DisplayName
 	local text
 	if cs.State == "Idle" then
-		text = name .. " · OPEN\nStand on a pad to play 1v1"
+		text = ("%s · %s · OPEN\n%s · stand on a pad"):format(name, cs.Court.Theme.Name, rulesText(cs))
 	else
 		local homeName = if cs.Home then cs.Home.DisplayName else "—"
 		local awayName = if cs.Away then cs.Away.DisplayName else "—"
@@ -168,7 +178,8 @@ local function publish(cs: CourtState)
 	setAttr(model, "AwayName", if cs.Away then cs.Away.DisplayName else "")
 	setAttr(model, "HomeScore", cs.Scores.Home)
 	setAttr(model, "AwayScore", cs.Scores.Away)
-	setAttr(model, "TargetScore", MATCH.TargetScore)
+	setAttr(model, "TargetScore", cs.Rules.TargetScore)
+	setAttr(model, "MatchDuration", cs.Rules.Duration)
 	setAttr(model, "ClockEndsAt", cs.ClockEndsAt)
 	setAttr(model, "ClockRemaining", cs.ClockRemaining)
 	setAttr(model, "ShotClockEndsAt", cs.ShotClockEndsAt)
@@ -327,7 +338,9 @@ local function endMatch(cs: CourtState, winner: Player?, reason: string)
 	-- dunk) is frozen once they land, not left hanging at the rim
 	local matchId = cs.MatchId
 	for _, player in participants(cs) do
-		if CharacterService.IsAlive(player) then
+		local root = CharacterService.GetRoot(player)
+		local nearCourt = root ~= nil and BasketballMath.IsInBounds(cs.Court.Origin, root.Position, COURT.Runoff + 4)
+		if nearCourt and CharacterService.IsAlive(player) then
 			if CharacterService.WasGroundedWithin(player, 0.1) then
 				CharacterService.SetFrozen(player, true)
 			else
@@ -358,7 +371,9 @@ local function endMatch(cs: CourtState, winner: Player?, reason: string)
 		Reason = reason,
 		Home = cs.Home,
 		Away = cs.Away,
-		Played = if cs.Overtime then MATCH.Duration else math.max(0, MATCH.Duration - cs.ClockRemaining),
+		Played = if cs.Overtime then cs.Rules.Duration else math.max(0, cs.Rules.Duration - cs.ClockRemaining),
+		TargetScore = cs.Rules.TargetScore,
+		Duration = cs.Rules.Duration,
 	}
 	tell(cs, "MatchEnded", {
 		WinnerUserId = cs.WinnerUserId,
@@ -437,7 +452,7 @@ local function finish(cs: CourtState)
 	cs.Offense = nil
 	cs.Possessor = nil
 	cs.Scores = { Home = 0, Away = 0 }
-	cs.ClockRemaining = MATCH.Duration
+	cs.ClockRemaining = cs.Rules.Duration
 	cs.ClockEndsAt = 0
 	cs.ShotClockEndsAt = 0
 	cs.PhaseEndsAt = 0
@@ -516,7 +531,7 @@ end
 --------------------------------------------------------------------------------
 
 local function courtStateForBall(ball: any): CourtState?
-	return stateByCourtId[ball.Court.Id]
+	return stateByBall[ball]
 end
 
 local function onScored(ball: any, shot: any)
@@ -552,7 +567,7 @@ local function onScored(ball: any, shot: any)
 		Kind = shot.Kind,
 	})
 
-	if cs.Scores[side] >= MATCH.TargetScore then
+	if cs.Scores[side] >= cs.Rules.TargetScore then
 		endMatch(cs, shot.Shooter, "Score")
 	elseif cs.Overtime then
 		endMatch(cs, shot.Shooter, "Overtime")
@@ -609,8 +624,13 @@ end
 function MatchService.Init(courts: { any })
 	feedback = Net.Event("Feedback")
 	for _, court in courts do
+		local rules: Rules = {
+			TargetScore = court.Rules.TargetScore or MATCH.TargetScore,
+			Duration = court.Rules.Duration or MATCH.Duration,
+		}
 		local cs: CourtState = {
 			Court = court,
+			Rules = rules,
 			Ball = BallService.Create(court),
 			State = "Idle",
 			PhaseEndsAt = 0,
@@ -619,7 +639,7 @@ function MatchService.Init(courts: { any })
 			Away = nil,
 			Scores = { Home = 0, Away = 0 },
 			Offense = nil,
-			ClockRemaining = MATCH.Duration,
+			ClockRemaining = rules.Duration,
 			ClockEndsAt = 0,
 			Overtime = false,
 			OvertimeEndsAt = 0,
@@ -636,7 +656,7 @@ function MatchService.Init(courts: { any })
 			ResultReason = "",
 		}
 		table.insert(courtStates, cs)
-		stateByCourtId[court.Id] = cs
+		stateByBall[cs.Ball] = cs
 		enterPractice(cs)
 		publish(cs)
 	end
@@ -683,7 +703,7 @@ function MatchService.StartMatch(cs: CourtState, home: Player, away: Player): bo
 	CharacterService.SetInMatch(home, true)
 	CharacterService.SetInMatch(away, true)
 	cs.Scores = { Home = 0, Away = 0 }
-	cs.ClockRemaining = MATCH.Duration
+	cs.ClockRemaining = cs.Rules.Duration
 	cs.ClockEndsAt = 0
 	cs.ShotClockEndsAt = 0
 	cs.WaitingSince = 0
@@ -747,9 +767,30 @@ local function sweepIntruders(cs: CourtState)
 		end
 		local root = CharacterService.GetRoot(player)
 		if root and BasketballMath.IsInBounds(origin, root.Position, COURT.Runoff) and root.Position.Y < origin.Position.Y + 20 then
-			CharacterService.Teleport(player, cs.Court.ReturnSpots.Home * CFrame.new(0, 0, 4))
-			feedback:FireClient(player, "Notice", { Text = "That court is in a match — queue on a pad to play" })
+			local own = playerCourt[player]
+			if own and own ~= cs then
+				-- In a match somewhere else: back to their own court's sideline
+				CharacterService.Teleport(player, spotCFrame(own, Vector3.new(COURT.Width / 2 + 2, 0, COURT.Length / 2), Vector3.new(0, 0, COURT.Length / 2)))
+				feedback:FireClient(player, "Notice", { Text = ("Your match is on %s"):format(own.Court.DisplayName) })
+			else
+				CharacterService.Teleport(player, cs.Court.BystanderSpot)
+				feedback:FireClient(player, "Notice", { Text = "That court is in a match — queue on a pad to play" })
+			end
 		end
+	end
+end
+
+-- During pauses (dead ball, results) a ball that rolled off its court goes back
+-- to the rack, so it can't wander onto another court
+local function keepBallHome(cs: CourtState)
+	local ball = cs.Ball
+	if ball.State ~= "Loose" and ball.State ~= "Dead" then
+		return
+	end
+	local origin: CFrame = cs.Court.Origin
+	local position = ball.Part.Position
+	if not BasketballMath.IsInBounds(origin, position, COURT.Runoff + 2) and position.Y < origin.Position.Y + 3 then
+		BallService.PlaceAt(ball, cs.Court.RackPosition, "Dead")
 	end
 end
 
@@ -847,8 +888,10 @@ function MatchService.Update(dt: number)
 		elseif state == "Live" then
 			updateLive(cs, t)
 		elseif state == "Dead" then
+			keepBallHome(cs)
 			updateDead(cs, t)
 		elseif state == "GameOver" then
+			keepBallHome(cs)
 			if t >= cs.PhaseEndsAt then
 				finish(cs)
 			end

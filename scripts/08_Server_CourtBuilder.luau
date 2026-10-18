@@ -11,20 +11,24 @@ local Config = require(Shared:WaitForChild("Config"))
 local BasketballMath = require(Shared:WaitForChild("BasketballMath"))
 
 local CourtBuilder = {}
-CourtBuilder.ScriptVersion = 2 -- Main/ClientMain compare this to spot an old copy; bump when this file changes
+CourtBuilder.ScriptVersion = 3 -- Main/ClientMain compare this to spot an old copy; bump when this file changes
 CourtBuilder.ScriptFile = "08_Server_CourtBuilder" -- and this to spot another file's code pasted here
 
 export type CourtHandle = {
 	Id: string,
 	DisplayName: string,
+	Theme: Config.CourtTheme,
+	Rules: Config.CourtRules,
 	Model: Model,
 	Origin: CFrame,
 	RimCenter: Vector3,
 	Pads: { Home: BasePart, Away: BasePart },
 	PadLabels: { Home: TextLabel, Away: TextLabel },
+	PadIdleText: { Home: string, Away: string },
 	SignLabel: TextLabel,
 	RackPosition: Vector3,
 	ReturnSpots: { Home: CFrame, Away: CFrame },
+	BystanderSpot: CFrame, -- where someone walking onto this court mid-match is put
 }
 
 local C = Config.Court
@@ -193,17 +197,123 @@ local function lightPole(parent: Instance, base: CFrame, target: Vector3)
 	}, attachment)
 end
 
-local function buildPark(parkFolder: Folder, anchor: CFrame)
+--------------------------------------------------------------------------------
+-- Footprints: the ground a court and everything around it uses (court-local:
+-- fences, lights and benches at the sides, pads and return spots in front)
+--------------------------------------------------------------------------------
+
+-- Court-local rectangles { halfWidth, zMin, zMax } that cover everything a
+-- court places, with a little room: the court with its fences, lights and
+-- benches; the slab's front corners; the entrance (pads and return spots)
+local FOOTPRINT = {
+	{ C.Width / 2 + C.Runoff + 5, -(C.Runoff + 2), C.Length + 1 },
+	{ C.Width / 2 + C.Runoff + 2, C.Length + 1, C.Length + C.Runoff + 2 },
+	{ Config.Queue.PadGap / 2 + Config.Queue.PadSize + 2, C.Length + C.Runoff + 2, C.Length + C.Runoff + Config.Queue.PadDistance + 9 },
+}
+
+local function rectCorners(origin: CFrame, rect: { number }, margin: number): { Vector3 }
+	local x, z0, z1 = rect[1] + margin, rect[2] - margin, rect[3] + margin
+	return {
+		origin:PointToWorldSpace(Vector3.new(-x, 0, z0)),
+		origin:PointToWorldSpace(Vector3.new(x, 0, z0)),
+		origin:PointToWorldSpace(Vector3.new(x, 0, z1)),
+		origin:PointToWorldSpace(Vector3.new(-x, 0, z1)),
+	}
+end
+
+local function footprintCorners(origin: CFrame, margin: number): { Vector3 }
+	local corners = {}
+	for _, rect in FOOTPRINT do
+		for _, p in rectCorners(origin, rect, margin) do
+			table.insert(corners, p)
+		end
+	end
+	return corners
+end
+
+local function inFootprint(origin: CFrame, point: Vector3, margin: number): boolean
+	local p = origin:PointToObjectSpace(point)
+	for _, rect in FOOTPRINT do
+		if math.abs(p.X) < rect[1] + margin and p.Z > rect[2] - margin and p.Z < rect[3] + margin then
+			return true
+		end
+	end
+	return false
+end
+
+-- Separating-axis test for two rotated rectangles given as corner lists
+local function rectsOverlap(ca: { Vector3 }, a: CFrame, cb: { Vector3 }, b: CFrame): boolean
+	for _, frame in { a, b } do
+		for _, axis in { frame.RightVector, frame.LookVector } do
+			local minA, maxA, minB, maxB = math.huge, -math.huge, math.huge, -math.huge
+			for _, p in ca do
+				local d = p:Dot(axis)
+				minA, maxA = math.min(minA, d), math.max(maxA, d)
+			end
+			for _, p in cb do
+				local d = p:Dot(axis)
+				minB, maxB = math.min(minB, d), math.max(maxB, d)
+			end
+			if maxA < minB or maxB < minA then
+				return false
+			end
+		end
+	end
+	return true
+end
+
+-- Do two courts' footprints (each grown by margin/2) overlap anywhere?
+local function footprintsOverlap(a: CFrame, b: CFrame, margin: number): boolean
+	for _, ra in FOOTPRINT do
+		for _, rb in FOOTPRINT do
+			if rectsOverlap(rectCorners(a, ra, margin / 2), a, rectCorners(b, rb, margin / 2), b) then
+				return true
+			end
+		end
+	end
+	return false
+end
+
+-- Courts must have unique Ids and room of their own; say exactly what's wrong
+local function checkLayout()
+	local seen: { [string]: boolean } = {}
+	local origins: { CFrame } = {}
+	for i, def in Config.Courts do
+		if seen[def.Id] then
+			error(("Config.Courts: two courts are called %q. Give each court its own Id."):format(def.Id), 0)
+		end
+		seen[def.Id] = true
+		local origin = BasketballMath.CourtOrigin(def.Position, def.Yaw)
+		for j, other in origins do
+			if footprintsOverlap(origin, other, 6) then
+				local otherDef = Config.Courts[j]
+				error(("Config.Courts: %s is too close to %s (their areas overlap). Move it further away; README > Tuning explains Position and Yaw."):format(def.DisplayName, otherDef.DisplayName), 0)
+			end
+		end
+		origins[i] = origin
+	end
+end
+
+-- The park around every court. The lobby (spawn and arch) is placed from the
+-- first court; the plaza and trees cover and avoid all of them.
+local function buildPark(parkFolder: Folder, courts: { CourtHandle })
+	local anchor = courts[1].Origin
 	block(parkFolder, "Ground", Vector3.new(700, 2, 700), CFrame.new(anchor.Position.X, -1, anchor.Position.Z + 30), PALETTE.Grass, Enum.Material.Grass)
 
-	-- Concrete plaza under the courts and lobby
-	local plazaDepth = C.Length + C.Runoff * 2 + 60
-	local plazaWidth = C.Width + C.Runoff * 2 + 36
-	local plazaCenter = anchor * CFrame.new(0, -anchor.Position.Y + 0.05, C.Length / 2 + 22)
-	block(parkFolder, "Plaza", Vector3.new(plazaWidth, 0.1, plazaDepth), plazaCenter, PALETTE.Plaza, Enum.Material.Concrete)
-
-	-- Spawn in the lobby, facing the court
 	local spawnPos = anchor:PointToWorldSpace(Config.Lobby.SpawnOffset)
+
+	-- One concrete plaza under every court and the lobby (no overlapping slabs,
+	-- so no flickering), so all courts' props stand at the same height
+	local minX, maxX, minZ, maxZ = spawnPos.X - 20, spawnPos.X + 20, spawnPos.Z - 20, spawnPos.Z + 20
+	for _, court in courts do
+		for _, p in footprintCorners(court.Origin, 4) do
+			minX, maxX = math.min(minX, p.X), math.max(maxX, p.X)
+			minZ, maxZ = math.min(minZ, p.Z), math.max(maxZ, p.Z)
+		end
+	end
+	block(parkFolder, "Plaza", Vector3.new(maxX - minX, 0.1, maxZ - minZ), CFrame.new((minX + maxX) / 2, 0.05, (minZ + maxZ) / 2), PALETTE.Plaza, Enum.Material.Concrete)
+
+	-- Spawn in the lobby, facing the first court
 	local spawnCF = CFrame.lookAt(Vector3.new(spawnPos.X, 0.5, spawnPos.Z), Vector3.new(anchor.Position.X, 0.5, anchor.Position.Z))
 	local spawn = make("SpawnLocation", {
 		Name = "LobbySpawn",
@@ -230,20 +340,45 @@ local function buildPark(parkFolder: Folder, anchor: CFrame)
 	surfaceText(beam, Enum.NormalId.Back, "STREET HOOPS", Config.UI.Accent, Config.UI.FontHeavy)
 	surfaceText(beam, Enum.NormalId.Front, "STREET HOOPS", Config.UI.Accent, Config.UI.FontHeavy)
 
-	-- Benches and trees around the lobby
-	-- Benches either side of the spawn, facing it
-	bench(parkFolder, spawnCF * CFrame.new(-16, -0.4, 0) * CFrame.Angles(0, math.rad(-90), 0))
-	bench(parkFolder, spawnCF * CFrame.new(16, -0.4, 0) * CFrame.Angles(0, math.rad(90), 0))
+	-- Signs on the arch pointing to the other courts (left / right of the spawn)
+	local left, right = {}, {}
+	for i, court in courts do
+		if i > 1 then
+			local p = spawnCF:PointToObjectSpace(court.Pads.Home.Position:Lerp(court.Pads.Away.Position, 0.5))
+			table.insert(if p.X < 0 then left else right, court.DisplayName)
+		end
+	end
+	for _, entry in { { x = -12, names = left, text = "<  %s" }, { x = 12, names = right, text = "%s  >" } } do
+		if #entry.names > 0 then
+			local board = block(parkFolder, "CourtArrow", Vector3.new(8, 2, 0.3), archCF * CFrame.new(entry.x, 11, 1.2), Config.UI.Panel, Enum.Material.SmoothPlastic, DECOR)
+			surfaceText(board, Enum.NormalId.Back, entry.text:format(table.concat(entry.names, " · ")), Config.UI.Text, Config.UI.FontHeavy)
+		end
+	end
+
+	-- Benches behind the spawn, facing the courts (the paths to the side courts stay clear)
+	bench(parkFolder, spawnCF * CFrame.new(-10, -0.4, 12))
+	bench(parkFolder, spawnCF * CFrame.new(10, -0.4, 12))
+
+	-- Trees around the park, never on or right next to a court
 	local treeSpots = {
 		Vector3.new(-50, 0, 10), Vector3.new(50, 0, 14), Vector3.new(-56, 0, -30),
-		Vector3.new(58, 0, -26), Vector3.new(-48, 0, 70), Vector3.new(52, 0, 74),
-		Vector3.new(-30, 0, 96), Vector3.new(30, 0, 98), Vector3.new(-70, 0, 40),
-		Vector3.new(72, 0, 44), Vector3.new(0, 0, -40), Vector3.new(-24, 0, -42),
-		Vector3.new(26, 0, -44),
+		Vector3.new(58, 0, -26), Vector3.new(-75, 0, 116), Vector3.new(75, 0, 116),
+		Vector3.new(-30, 0, 116), Vector3.new(30, 0, 118), Vector3.new(-140, 0, 40),
+		Vector3.new(140, 0, 44), Vector3.new(0, 0, -40), Vector3.new(-24, 0, -42),
+		Vector3.new(26, 0, -44), Vector3.new(-150, 0, 100), Vector3.new(150, 0, 104),
 	}
 	for i, offset in treeSpots do
 		local p = anchor:PointToWorldSpace(offset)
-		tree(parkFolder, Vector3.new(p.X, 0, p.Z), 0.9 + (i % 3) * 0.15)
+		local spot = Vector3.new(p.X, 0, p.Z)
+		local blocked = (spot - Vector3.new(spawnPos.X, 0, spawnPos.Z)).Magnitude < 20
+		for _, court in courts do
+			if inFootprint(court.Origin, spot, 11) then
+				blocked = true
+			end
+		end
+		if not blocked then
+			tree(parkFolder, spot, 0.9 + (i % 3) * 0.15)
+		end
 	end
 end
 
@@ -297,7 +432,7 @@ local function courtLines(folder: Instance, origin: CFrame)
 	arc(0, C.Length, C.CenterCircleRadius, 90, 270, 16)
 end
 
-local function buildHoop(folder: Instance, origin: CFrame)
+local function buildHoop(folder: Instance, origin: CFrame, paddingColor: Color3)
 	local hoop = make("Model", { Name = "Hoop" }, folder) :: Model
 	local function L(x: number, y: number, z: number): CFrame
 		return origin * CFrame.new(x, y, z)
@@ -306,7 +441,7 @@ local function buildHoop(folder: Instance, origin: CFrame)
 	-- Support pole behind the baseline
 	local poleZ = -3.5
 	cylinderVertical(hoop, "Pole", 13, 0.9, L(0, 0, poleZ), PALETTE.Metal, Enum.Material.Metal)
-	block(hoop, "PolePad", Vector3.new(1.5, 6, 1.5), L(0, 3, poleZ), PALETTE.Padding, Enum.Material.Fabric)
+	block(hoop, "PolePad", Vector3.new(1.5, 6, 1.5), L(0, 3, poleZ), paddingColor, Enum.Material.Fabric)
 	local armLength = C.BackboardZ - 0.3 - poleZ
 	block(hoop, "Arm", Vector3.new(0.6, 0.6, armLength), L(0, 12.4, poleZ + armLength / 2), PALETTE.Metal, Enum.Material.Metal)
 	strip(hoop, L(0, 9.5, poleZ).Position, L(0, 12.2, C.BackboardZ - 1.2).Position, 0.35, 0.35, PALETTE.Metal)
@@ -390,7 +525,8 @@ local function buildFence(folder: Instance, origin: CFrame)
 	local fence = make("Model", { Name = "Fence" }, folder) :: Model
 	local hw = C.Width / 2 + C.Runoff + 1
 	local zBack = -C.Runoff - 1
-	local zFront = C.Length + C.Runoff - 6 -- the half-court side stays open as the entrance
+	local zFront = C.Length + C.Runoff + 1 -- just past the slab, so a ball can't roll off the sides
+	local mouth = 12 -- the entrance (24 studs wide, centred on the pads) faces the lobby
 	local height = 9
 	local function run(x1: number, z1: number, x2: number, z2: number)
 		local a = Vector3.new(x1, 0, z1)
@@ -414,9 +550,11 @@ local function buildFence(folder: Instance, origin: CFrame)
 	run(-hw, zBack, hw, zBack)
 	run(-hw, zBack, -hw, zFront)
 	run(hw, zBack, hw, zFront)
+	run(-hw, zFront, -mouth, zFront)
+	run(mouth, zFront, hw, zFront)
 end
 
-local function buildPad(folder: Instance, origin: CFrame, side: "Home" | "Away", localPos: Vector3, color: Color3): (Part, TextLabel)
+local function buildPad(folder: Instance, origin: CFrame, side: "Home" | "Away", localPos: Vector3, color: Color3, idleText: string): (Part, TextLabel)
 	local size = Config.Queue.PadSize
 	-- Pads sit on the plaza, slightly below the raised court floor
 	local cf = origin * CFrame.new(localPos + Vector3.new(0, GROUND + 0.06, 0))
@@ -440,7 +578,7 @@ local function buildPad(folder: Instance, origin: CFrame, side: "Home" | "Away",
 	local label = make("TextLabel", {
 		Size = UDim2.fromScale(1, 1),
 		BackgroundTransparency = 1,
-		Text = side == "Home" and "HOME · 1V1" or "AWAY · 1V1",
+		Text = idleText,
 		TextColor3 = Config.UI.Text,
 		TextStrokeTransparency = 0.4,
 		Font = Config.UI.FontHeavy,
@@ -449,11 +587,16 @@ local function buildPad(folder: Instance, origin: CFrame, side: "Home" | "Away",
 	return pad, label
 end
 
-local function buildCourt(courtsFolder: Folder, def: { Id: string, DisplayName: string, Position: Vector3, Yaw: number }): CourtHandle
+local function buildCourt(courtsFolder: Folder, def: Config.CourtDef): CourtHandle
 	local origin = BasketballMath.CourtOrigin(def.Position, def.Yaw)
+	local theme = def.Theme
 	local model = make("Model", { Name = def.Id }, courtsFolder) :: Model
 	model:SetAttribute("CourtId", def.Id)
 	model:SetAttribute("DisplayName", def.DisplayName)
+	model:SetAttribute("ThemeName", theme.Name)
+	model:SetAttribute("ThemeAccent", theme.Accent)
+	model:SetAttribute("TargetScore", def.Rules.TargetScore or Config.Match.TargetScore)
+	model:SetAttribute("MatchDuration", def.Rules.Duration or Config.Match.Duration)
 	-- Clients use this to know when they're driving at the rim (layups/dunks)
 	model:SetAttribute("RimCenter", BasketballMath.RimCenter(origin))
 	local static = make("Folder", { Name = "Static" }, model) :: Folder
@@ -463,14 +606,14 @@ local function buildCourt(courtsFolder: Folder, def: { Id: string, DisplayName: 
 	local slabW = C.Width + C.Runoff * 2
 	local slabD = C.Length + C.Runoff * 2
 	local floorCF = origin * CFrame.new(0, -C.FloorThickness / 2, C.Length / 2)
-	block(static, "Runoff", Vector3.new(slabW, C.FloorThickness, slabD), floorCF, PALETTE.Runoff, Enum.Material.Concrete)
-	block(static, "Surface", Vector3.new(C.Width, 0.06, C.Length), origin * CFrame.new(0, 0, C.Length / 2), PALETTE.Court, Enum.Material.SmoothPlastic, DECOR)
-	block(static, "Key", Vector3.new(C.KeyWidth, 0.06, C.FreeThrowDistance), origin * CFrame.new(0, 0.03, C.FreeThrowDistance / 2), PALETTE.Key, Enum.Material.SmoothPlastic, DECOR)
-	local centerPaint = block(static, "CenterPaint", Vector3.new(0.06, C.CenterCircleRadius * 2, C.CenterCircleRadius * 2), origin * CFrame.new(0, 0.03, C.Length) * CFrame.Angles(0, 0, math.rad(90)), PALETTE.Key, Enum.Material.SmoothPlastic, DECOR)
+	block(static, "Runoff", Vector3.new(slabW, C.FloorThickness, slabD), floorCF, theme.Runoff, Enum.Material.Concrete)
+	block(static, "Surface", Vector3.new(C.Width, 0.06, C.Length), origin * CFrame.new(0, 0, C.Length / 2), theme.Floor, Enum.Material.SmoothPlastic, DECOR)
+	block(static, "Key", Vector3.new(C.KeyWidth, 0.06, C.FreeThrowDistance), origin * CFrame.new(0, 0.03, C.FreeThrowDistance / 2), theme.Key, Enum.Material.SmoothPlastic, DECOR)
+	local centerPaint = block(static, "CenterPaint", Vector3.new(0.06, C.CenterCircleRadius * 2, C.CenterCircleRadius * 2), origin * CFrame.new(0, 0.03, C.Length) * CFrame.Angles(0, 0, math.rad(90)), theme.Key, Enum.Material.SmoothPlastic, DECOR)
 	centerPaint.Shape = Enum.PartType.Cylinder
 
 	courtLines(static, origin)
-	buildHoop(static, origin)
+	buildHoop(static, origin, theme.Key)
 	buildFence(static, origin)
 
 	-- Floodlights at the four corners
@@ -489,8 +632,8 @@ local function buildCourt(courtsFolder: Folder, def: { Id: string, DisplayName: 
 	-- Queue pads in front of the half-court line
 	local padZ = C.Length + C.Runoff + Config.Queue.PadDistance
 	local gap = Config.Queue.PadGap / 2 + Config.Queue.PadSize / 2
-	local homePad, homeLabel = buildPad(static, origin, "Home", Vector3.new(-gap, 0, padZ), Config.UI.Home)
-	local awayPad, awayLabel = buildPad(static, origin, "Away", Vector3.new(gap, 0, padZ), Config.UI.Away)
+	local homePad, homeLabel = buildPad(static, origin, "Home", Vector3.new(-gap, 0, padZ), Config.UI.Home, "HOME · " .. def.DisplayName)
+	local awayPad, awayLabel = buildPad(static, origin, "Away", Vector3.new(gap, 0, padZ), Config.UI.Away, "AWAY · " .. def.DisplayName)
 
 	-- Court status sign over the entrance
 	local signZ = C.Length + C.Runoff + 1
@@ -500,7 +643,7 @@ local function buildCourt(courtsFolder: Folder, def: { Id: string, DisplayName: 
 	local signCF = CFrame.lookAt(origin:PointToWorldSpace(Vector3.new(0, 11.5, signZ)), origin:PointToWorldSpace(Vector3.new(0, 11.5, signZ + 10)))
 	local sign = block(static, "StatusSign", Vector3.new(18, 4, 0.5), signCF, Config.UI.Panel, Enum.Material.SmoothPlastic)
 	local signLabel = surfaceText(sign, Enum.NormalId.Front, def.DisplayName, Config.UI.Text, Config.UI.FontHeavy)
-	surfaceText(sign, Enum.NormalId.Back, def.DisplayName, Config.UI.Accent, Config.UI.FontHeavy)
+	surfaceText(sign, Enum.NormalId.Back, def.DisplayName .. " · " .. theme.Name, theme.Accent, Config.UI.FontHeavy)
 
 	local function face(localPos: Vector3, lookLocal: Vector3): CFrame
 		local p = origin:PointToWorldSpace(localPos)
@@ -511,6 +654,8 @@ local function buildCourt(courtsFolder: Folder, def: { Id: string, DisplayName: 
 	return {
 		Id = def.Id,
 		DisplayName = def.DisplayName,
+		Theme = theme,
+		Rules = def.Rules,
 		Model = model,
 		Origin = origin,
 		RimCenter = BasketballMath.RimCenter(origin),
@@ -522,6 +667,8 @@ local function buildCourt(courtsFolder: Folder, def: { Id: string, DisplayName: 
 			Home = face(Vector3.new(-gap - 3, 3.2, returnZ), Vector3.new(0, 0, 0)),
 			Away = face(Vector3.new(gap + 3, 3.2, returnZ), Vector3.new(0, 0, 0)),
 		},
+		PadIdleText = { Home = "HOME · " .. def.DisplayName, Away = "AWAY · " .. def.DisplayName },
+		BystanderSpot = face(Vector3.new(0, 3.2, padZ + 8), Vector3.new(0, 0, 0)),
 	}
 end
 
@@ -530,7 +677,7 @@ end
 function CourtBuilder.Build(): { CourtHandle }
 	for _, name in { "Baseplate", "SpawnLocation" } do
 		if workspace:FindFirstChild(name) then
-			warn(("[CourtBuilder] Found a template '%s' in Workspace. Delete it in Studio (see PASTE_GUIDE step 2) so it does not overlap the park."):format(name))
+			warn(("[CourtBuilder] Found a template '%s' in Workspace. Delete it in Studio (see README, Step 2) so it does not overlap the park."):format(name))
 		end
 	end
 
@@ -545,16 +692,16 @@ function CourtBuilder.Build(): { CourtHandle }
 		existingCourts:Destroy()
 	end
 
+	checkLayout()
+
 	local park = make("Folder", { Name = "Park" }, workspace) :: Folder
 	local courtsFolder = make("Folder", { Name = "Courts" }, workspace) :: Folder
-
-	local firstDef = Config.Courts[1]
-	buildPark(park, BasketballMath.CourtOrigin(firstDef.Position, firstDef.Yaw))
 
 	local courts = {}
 	for _, def in Config.Courts do
 		table.insert(courts, buildCourt(courtsFolder, def))
 	end
+	buildPark(park, courts)
 	return courts
 end
 

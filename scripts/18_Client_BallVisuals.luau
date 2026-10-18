@@ -16,7 +16,7 @@ local UIKit = require(Client:WaitForChild("UIKit"))
 local MatchClient = require(Client:WaitForChild("MatchClient"))
 
 local BallVisuals = {}
-BallVisuals.ScriptVersion = 2 -- Main/ClientMain compare this to spot an old copy; bump when this file changes
+BallVisuals.ScriptVersion = 3 -- Main/ClientMain compare this to spot an old copy; bump when this file changes
 BallVisuals.ScriptFile = "18_Client_BallVisuals" -- and this to spot another file's code pasted here
 
 local BALL = Config.Ball
@@ -117,6 +117,23 @@ local function ensureVisuals()
 	end
 end
 
+-- With several courts, only show who has the ball where it concerns you: your
+-- own match's ball, or (not in a match) a ball near you
+local MARKER_RANGE = 60
+local function markerMatters(ball: BasePart, holderRoot: BasePart): boolean
+	local myCourt, role = MatchClient.GetMyCourt()
+	if role == "Playing" then
+		return ball.Parent == myCourt
+	end
+	local character = localPlayer.Character
+	local myRoot = character and character:FindFirstChild("HumanoidRootPart")
+	if not myRoot or not myRoot:IsA("BasePart") then
+		return false
+	end
+	local offset = holderRoot.Position - myRoot.Position
+	return Vector3.new(offset.X, 0, offset.Z).Magnitude <= MARKER_RANGE
+end
+
 local function updateVisual(v: Visual, dt: number)
 	local ball = v.Ball
 	local holderId = ball:GetAttribute("HolderUserId")
@@ -138,7 +155,7 @@ local function updateVisual(v: Visual, dt: number)
 	end
 
 	v.Marker.Adornee = if head and head:IsA("BasePart") then head else root
-	v.Marker.Enabled = holder ~= localPlayer
+	v.Marker.Enabled = holder ~= localPlayer and markerMatters(ball, root)
 	local label = v.Marker:FindFirstChild("Label", true)
 	if label and label:IsA("TextLabel") then
 		label.Text = holder.DisplayName

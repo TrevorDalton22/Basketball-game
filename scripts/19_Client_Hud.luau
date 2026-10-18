@@ -20,7 +20,7 @@ local UIKit = require(Client:WaitForChild("UIKit"))
 local MatchClient = require(Client:WaitForChild("MatchClient"))
 
 local Hud = {}
-Hud.ScriptVersion = 3 -- Main/ClientMain compare this to spot an old copy; bump when this file changes
+Hud.ScriptVersion = 4 -- Main/ClientMain compare this to spot an old copy; bump when this file changes
 Hud.ScriptFile = "19_Client_Hud" -- and this to spot another file's code pasted here
 
 local THEME = Config.UI
@@ -237,7 +237,7 @@ local function build()
 		Name = "Sub",
 		AnchorPoint = Vector2.new(0.5, 0),
 		Position = UDim2.new(0.5, 0, 0, 42),
-		Size = UDim2.new(0.24, 0, 0, 16),
+		Size = UDim2.new(0.4, 0, 0, 16),
 		TextColor3 = THEME.Accent,
 		Text = "FIRST TO 15",
 		Parent = scoreboard,
@@ -577,13 +577,55 @@ local function bindAction(name: string, shouldBind: boolean, isBound: boolean, h
 	return shouldBind
 end
 
-local function anyCourtOpen(): boolean
+-- Courts in the order Config lists them (so hints always pick the same one)
+local function courtsInOrder(): { Model }
+	local order: { [string]: number } = {}
+	for i, def in Config.Courts do
+		order[def.Id] = i
+	end
+	local list = {}
 	for _, court in MatchClient.GetCourts() do
-		if court:GetAttribute("State") == "Idle" then
-			return true
+		if court.Parent then
+			table.insert(list, court)
 		end
 	end
-	return false
+	table.sort(list, function(a, b)
+		return (order[attrString(a, "CourtId")] or 99) < (order[attrString(b, "CourtId")] or 99)
+	end)
+	return list
+end
+
+local function rulesText(court: Model): string
+	return ("first to %d · %d min"):format(attrNumber(court, "TargetScore"), math.floor(attrNumber(court, "MatchDuration") / 60 + 0.5))
+end
+
+-- Someone standing alone on an idle court's pad (not me), so I can go play them
+local function waitingElsewhere(except: Model?): (Model?, string?)
+	for _, court in courtsInOrder() do
+		if court ~= except and attrString(court, "State") == "Idle" then
+			local home, away = attrNumber(court, "PadHomeUserId"), attrNumber(court, "PadAwayUserId")
+			local lone = if home ~= 0 and away == 0 then home elseif away ~= 0 and home == 0 then away else 0
+			if lone ~= 0 and lone ~= player.UserId then
+				local other = Players:GetPlayerByUserId(lone)
+				return court, if other then other.DisplayName else "Someone"
+			end
+		end
+	end
+	return nil, nil
+end
+
+-- Idle courts with at least one free pad, and whether any court is idle at all
+local function openCourts(): ({ Model }, boolean)
+	local open, anyIdle = {}, false
+	for _, court in courtsInOrder() do
+		if attrString(court, "State") == "Idle" then
+			anyIdle = true
+			if attrNumber(court, "PadHomeUserId") == 0 or attrNumber(court, "PadAwayUserId") == 0 then
+				table.insert(open, court)
+			end
+		end
+	end
+	return open, anyIdle
 end
 
 --------------------------------------------------------------------------------
@@ -609,13 +651,19 @@ local function refresh()
 		leaveQueue:FireServer()
 	end, Enum.KeyCode.ButtonB, Enum.KeyCode.Backspace)
 	if queued and court then
-		queueTitle.Text = ("%s · %s PAD"):format(attrString(court, "DisplayName"), (side or ""):upper())
+		queueTitle.Text = ("%s · %s · %s PAD"):format(attrString(court, "DisplayName"), attrString(court, "ThemeName"), (side or ""):upper())
 		local otherId = attrNumber(court, if side == "Home" then "PadAwayUserId" else "PadHomeUserId")
+		local rules = rulesText(court)
 		if otherId ~= 0 then
 			local other = Players:GetPlayerByUserId(otherId)
-			queueStatus.Text = ("Opponent: %s — get ready!"):format(if other then other.DisplayName else "Player")
+			queueStatus.Text = ("Opponent: %s — get ready! (%s)"):format(if other then other.DisplayName else "Player", rules)
 		else
-			queueStatus.Text = "Waiting for an opponent on the other pad…"
+			local elsewhere, name = waitingElsewhere(court)
+			if elsewhere then
+				queueStatus.Text = ("%s is waiting on %s — walk over to play them"):format(name or "Someone", attrString(elsewhere, "DisplayName"))
+			else
+				queueStatus.Text = ("Waiting for an opponent on the other pad… (%s)"):format(rules)
+			end
 		end
 		queueKeys.Text = if kind == "Gamepad" then "Press B (○) to leave" elseif kind == "Keyboard" then "Backspace or LEAVE to leave" else ""
 	end
@@ -643,9 +691,9 @@ local function refresh()
 		homeBall.Visible = holder ~= 0 and holder == attrNumber(court, "HomeUserId")
 		awayBall.Visible = holder ~= 0 and holder == attrNumber(court, "AwayUserId")
 		if court:GetAttribute("Overtime") == true then
-			subLabel.Text = "OVERTIME · NEXT BASKET"
+			subLabel.Text = ("%s · OVERTIME"):format(attrString(court, "DisplayName"))
 		else
-			subLabel.Text = ("FIRST TO %d"):format(attrNumber(court, "TargetScore"))
+			subLabel.Text = ("%s · FIRST TO %d"):format(attrString(court, "DisplayName"), attrNumber(court, "TargetScore"))
 		end
 	end
 
@@ -665,13 +713,15 @@ local function refresh()
 			resultsTitle.TextColor3 = THEME.Bad
 		end
 		resultsScore.Text = ("%s  %d – %d  %s"):format(attrString(court, "HomeName"), attrNumber(court, "HomeScore"), attrNumber(court, "AwayScore"), attrString(court, "AwayName"))
+		local reasonText
 		if reason == "Score" then
-			resultsReason.Text = ("First to %d"):format(attrNumber(court, "TargetScore"))
+			reasonText = ("First to %d"):format(attrNumber(court, "TargetScore"))
 		elseif reason == "Forfeit" then
-			resultsReason.Text = if winner == player.UserId then "Opponent forfeited" else "You forfeited"
+			reasonText = if winner == player.UserId then "Opponent forfeited" else "You forfeited"
 		else
-			resultsReason.Text = REASON_TEXT[reason] or reason
+			reasonText = REASON_TEXT[reason] or reason
 		end
+		resultsReason.Text = ("%s · %s"):format(attrString(court, "DisplayName"), reasonText)
 		resultsRewards.Text = rewardsText
 	else
 		results.Visible = false
@@ -688,7 +738,7 @@ local function refresh()
 			if state == "Live" and (previous == "Countdown" or previous == "Check") then
 				showBanner(if previous == "Countdown" then "GO!" else "BALL IN", nil, THEME.Accent, 0.9)
 			elseif state == "Check" then
-				showBanner("CHECK", "Get set…", THEME.TextDim, Config.Match.CheckTime)
+				showBanner("CHECK", "Get set…", THEME.TextDim, math.max(0.2, attrNumber(court, "PhaseEndsAt") - workspace:GetServerTimeNow()))
 			elseif state == "GameOver" then
 				hideBanner()
 			end
@@ -731,8 +781,14 @@ local function refresh()
 		hint.Text = ""
 	elseif MatchClient.GetHeldBall() then
 		hint.Text = ("Practice · %s to shoot · %s · %s"):format(shootPrompt(), finishPrompt(), crossoverPrompt())
-	elseif not anyCourtOpen() and #MatchClient.GetCourts() > 0 then
-		hint.Text = "All courts are in a match — the pads light up again when one opens"
+	elseif waitingElsewhere(nil) then
+		local elsewhere, name = waitingElsewhere(nil)
+		hint.Text = ("%s is waiting on %s · step onto its free pad to play"):format(name or "Someone", if elsewhere then attrString(elsewhere, "DisplayName") else "a court")
+	elseif #MatchClient.GetCourts() > 0 and #(openCourts()) == 0 then
+		local _, anyIdle = openCourts()
+		hint.Text = if anyIdle
+			then "All pads are taken — the next match starts soon"
+			else "All courts are in a match — the pads light up again when one opens"
 	else
 		hint.Text = "Step onto a glowing pad to queue for 1v1 · Grab a court ball to practice"
 	end
@@ -859,7 +915,12 @@ local function onFeedback(kind: string, data: any)
 	elseif kind == "Overtime" then
 		showBanner("OVERTIME", "Next basket wins", THEME.Accent, 2)
 	elseif kind == "MatchStarting" then
-		Hud.Toast("Match found — 1v1!", THEME.Accent, 2)
+		local court = MatchClient.GetMyCourt()
+		if court then
+			Hud.Toast(("Match found — %s · %s"):format(attrString(court, "DisplayName"), rulesText(court)), THEME.Accent, 2.5)
+		else
+			Hud.Toast("Match found — 1v1!", THEME.Accent, 2)
+		end
 	elseif kind == "ShotRejected" then
 		if typeof(data.Reason) == "string" and data.Reason ~= "" then
 			Hud.Toast(data.Reason, THEME.Bad, 2)

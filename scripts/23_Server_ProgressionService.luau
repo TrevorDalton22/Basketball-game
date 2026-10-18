@@ -16,7 +16,7 @@ local DataService = require(Server:WaitForChild("DataService"))
 local MatchService = require(Server:WaitForChild("MatchService"))
 
 local ProgressionService = {}
-ProgressionService.ScriptVersion = 1 -- Main compares this to spot an old copy; bump when this file changes
+ProgressionService.ScriptVersion = 2 -- Main compares this to spot an old copy; bump when this file changes
 ProgressionService.ScriptFile = "23_Server_ProgressionService" -- and this to spot another file's code pasted here
 
 local PROGRESSION = Config.Progression
@@ -91,7 +91,9 @@ local function onMatchEnded(result: MatchService.MatchResult)
 		end
 		local score = if side == "Home" then result.HomeScore else result.AwayScore
 		local outcome = if result.Winner == player then "Win" elseif result.Winner == nil then "Draw" else "Loss"
-		local coins = rewards[outcome] + math.min(score * rewards.PerPoint, rewards.MaxPointCoins)
+		-- Shorter games (a lower target) pay proportionally less, so no court pays more per minute
+		local scale = result.TargetScore / Config.Match.TargetScore
+		local coins = math.floor(rewards[outcome] * scale + 0.5) + math.min(score * rewards.PerPoint, rewards.MaxPointCoins)
 		if reason == "Forfeit" and outcome == "Loss" then
 			coins = 0 -- quitting still counts as a loss, but earns nothing
 		end

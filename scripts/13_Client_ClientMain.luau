@@ -17,8 +17,8 @@ end
 
 -- This file's version, sent to Main (which flags an old ClientMain), and the
 -- version Main must publish (an older or missing one means Main is the old copy)
-local CLIENT_MAIN_VERSION = 5
-local EXPECTED_MAIN_VERSION = 5
+local CLIENT_MAIN_VERSION = 6
+local EXPECTED_MAIN_VERSION = 6
 
 local MAIN_WHERE = "ServerScriptService > Server > Main"
 local CLIENT_MAIN_WHERE = "StarterPlayer > StarterPlayerScripts > ClientMain"
@@ -118,7 +118,7 @@ local CLIENT_PATH = CLIENT_MAIN_WHERE .. " > "
 -- Main checks the server modules the same way.
 type Module = { Name: string, Parent: Instance, Where: string, File: string, Version: number, Uses: { string } }
 local MODULES: { Module } = {
-	{ Name = "Config", Parent = Shared, Where = "ReplicatedStorage > Shared > Config", File = "01_Shared_Config", Version = 3, Uses = {} },
+	{ Name = "Config", Parent = Shared, Where = "ReplicatedStorage > Shared > Config", File = "01_Shared_Config", Version = 4, Uses = {} },
 	{ Name = "Signal", Parent = Shared, Where = "ReplicatedStorage > Shared > Signal", File = "02_Shared_Signal", Version = 1, Uses = {} },
 	{ Name = "Net", Parent = Shared, Where = "ReplicatedStorage > Shared > Net", File = "03_Shared_Net", Version = 3, Uses = {} },
 	{ Name = "BasketballMath", Parent = Shared, Where = "ReplicatedStorage > Shared > BasketballMath", File = "04_Shared_BasketballMath", Version = 1, Uses = { "Config" } },
@@ -126,8 +126,8 @@ local MODULES: { Module } = {
 	{ Name = "MatchClient", Parent = script, Where = CLIENT_PATH .. "MatchClient", File = "15_Client_MatchClient", Version = 2, Uses = { "Signal", "Config", "BasketballMath" } },
 	{ Name = "ShotMeter", Parent = script, Where = CLIENT_PATH .. "ShotMeter", File = "16_Client_ShotMeter", Version = 1, Uses = { "Config", "Net", "UIKit" } },
 	{ Name = "ShootController", Parent = script, Where = CLIENT_PATH .. "ShootController", File = "17_Client_ShootController", Version = 3, Uses = { "Config", "Net", "BasketballMath", "UIKit", "MatchClient", "ShotMeter" } },
-	{ Name = "BallVisuals", Parent = script, Where = CLIENT_PATH .. "BallVisuals", File = "18_Client_BallVisuals", Version = 2, Uses = { "Config", "UIKit", "MatchClient" } },
-	{ Name = "Hud", Parent = script, Where = CLIENT_PATH .. "Hud", File = "19_Client_Hud", Version = 3, Uses = { "Config", "Net", "UIKit", "MatchClient" } },
+	{ Name = "BallVisuals", Parent = script, Where = CLIENT_PATH .. "BallVisuals", File = "18_Client_BallVisuals", Version = 3, Uses = { "Config", "UIKit", "MatchClient" } },
+	{ Name = "Hud", Parent = script, Where = CLIENT_PATH .. "Hud", File = "19_Client_Hud", Version = 4, Uses = { "Config", "Net", "UIKit", "MatchClient" } },
 	{ Name = "MovesController", Parent = script, Where = CLIENT_PATH .. "MovesController", File = "21_Client_MovesController", Version = 2, Uses = { "Config", "Net", "UIKit", "MatchClient", "ShootController" } },
 }
 local entryByName: { [string]: Module } = {}
