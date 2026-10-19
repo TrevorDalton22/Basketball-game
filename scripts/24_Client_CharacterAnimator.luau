@@ -464,24 +464,56 @@ local function palmOf(arm: Arm): Vector3
 	return Vector3.new(0, -arm.Hand.Size.Y * 0.5, 0)
 end
 
--- Bone lengths: shoulder → elbow, and elbow → palm (forearm and hand kept in
--- line). R6 arms are one piece: shoulder → palm, and no second bone.
-local function bonesOf(arm: Arm): (number, number)
-	local shC1 = jointC1(arm.Shoulder)
-	if arm.Elbow and arm.Wrist then
-		local elbow, wrist = arm.Elbow :: Joint, arm.Wrist :: Joint
-		local upper = (jointC0(elbow).Position - shC1.Position).Magnitude
-		local forearm = (jointC0(wrist).Position - jointC1(elbow).Position).Magnitude
-		local hand = (palmOf(arm) - jointC1(wrist).Position).Magnitude
-		return upper, forearm + hand
+local ELBOW_MAX = math.rad(150) -- an elbow folds this far at most (and never bends backwards)
+
+-- The elbow turns only about its own joint X axis. With the hand set by the
+-- wrist bend, this works out how far the palm is from the shoulder pivot for
+-- any elbow bend, and the bend that gives a wanted distance, exactly (law of
+-- cosines around that axis; the shoulder pivot sits off the arm's centre line,
+-- so the plain two-bone formula would twist the elbow sideways).
+type Hinge = { Reach: number, Shortest: number, BendFor: (distance: number) -> number }
+local function hingeOf(arm: Arm, palmInForearm: Vector3): Hinge
+	local elbow = arm.Elbow :: Joint
+	local elC0, elC1 = jointC0(elbow), jointC1(elbow)
+	-- In the elbow joint's own frame: the palm before bending, and the shoulder
+	local p = elC1:Inverse() * palmInForearm
+	local q = elC0:Inverse() * jointC1(arm.Shoulder).Position
+	-- |Rx(theta) p - q|^2 = k - 2 m cos(theta - phi)
+	local a = q.Y * p.Y + q.Z * p.Z
+	local b = q.Z * p.Y - q.Y * p.Z
+	local m = math.sqrt(a * a + b * b)
+	local phi = math.atan2(b, a)
+	local k = p:Dot(p) + q:Dot(q) - 2 * q.X * p.X
+	local function distanceAt(theta: number): number
+		return math.sqrt(math.max(k - 2 * m * math.cos(theta - phi), 0))
 	end
-	return (palmOf(arm) - shC1.Position).Magnitude, 0
+	-- Farthest reach is at phi + pi; the arm can't go past straight or fold past ELBOW_MAX
+	local farthest = (phi + math.pi + math.pi) % (2 * math.pi) - math.pi
+	local straightest = math.clamp(farthest, 0, ELBOW_MAX)
+	local reach, shortest = distanceAt(straightest), distanceAt(ELBOW_MAX)
+	return {
+		Reach = reach,
+		Shortest = shortest,
+		BendFor = function(distance: number): number
+			if m < 1e-6 then
+				return straightest
+			end
+			local d = math.clamp(distance, shortest, reach)
+			local c = math.clamp((k - d * d) / (2 * m), -1, 1)
+			-- Past the farthest point the palm comes closer as the elbow folds
+			return math.clamp(farthest + math.acos(-c), straightest, ELBOW_MAX)
+		end,
+	}
 end
 
 -- How far the palm reaches from the shoulder with the arm straight
 local function reachOf(arm: Arm): number
-	local upper, lower = bonesOf(arm)
-	return upper + lower
+	local shC1 = jointC1(arm.Shoulder)
+	if arm.Elbow and arm.Wrist then
+		local wrist = arm.Wrist :: Joint
+		return hingeOf(arm, (jointC0(wrist) * jointC1(wrist):Inverse()) * palmOf(arm)).Reach
+	end
+	return (palmOf(arm) - shC1.Position).Magnitude
 end
 
 type ArmPose = { Shoulder: CFrame, Elbow: CFrame?, Wrist: CFrame? }
@@ -515,22 +547,20 @@ local function solveArm(arm: Arm, chest: CFrame, target: Vector3, pole: Vector3,
 
 	local elbow, wrist = arm.Elbow :: Joint, arm.Wrist :: Joint
 	local elC0, elC1 = jointC0(elbow), jointC1(elbow)
-	local upperBone = elC0.Position - shC1.Position
-	local l1 = upperBone.Magnitude
 	-- Bend the wrist about the forearm's side-to-side axis (flex > 0: the way
-	-- the elbow folds), then treat forearm and hand as one bone from the elbow
-	-- to the palm, so the palm lands exactly on the target
+	-- the elbow folds); then the palm's place in the forearm is fixed
 	local wristT = inJoint(wrist, CFrame.Angles(flex, 0, 0))
 	local palmInForearm = (jointC0(wrist) * wristT * jointC1(wrist):Inverse()) * palmOf(arm)
-	local lowerBone = palmInForearm - elC1.Position
-	local l2 = lowerBone.Magnitude
-	if l1 < 1e-3 or l2 < 1e-3 then
+	-- Fold the elbow (a hinge about its own X axis) until shoulder-to-palm is
+	-- the distance to the target...
+	local theta = hingeOf(arm, palmInForearm).BendFor(distance)
+	local elbowT = CFrame.Angles(theta, 0, 0)
+	local palmInUpper = (elC0 * elbowT * elC1:Inverse()) * palmInForearm - shC1.Position
+	if palmInUpper.Magnitude < 1e-3 then
 		return nil
 	end
-	-- Two-bone solve in the plane of shoulder, target and pole
-	local d = math.clamp(distance, math.abs(l1 - l2) + 0.02, (l1 + l2) * 0.999)
-	local cosA = math.clamp((l1 * l1 + d * d - l2 * l2) / (2 * l1 * d), -1, 1)
-	local sinA = math.sqrt(1 - cosA * cosA)
+	-- ...then turn the whole arm at the shoulder so the palm points at the
+	-- target and the elbow sits towards the pole, square to its hinge
 	local bend = pole - direction * pole:Dot(direction)
 	if bend.Magnitude < 1e-3 then
 		bend = direction:Cross(Vector3.xAxis)
@@ -538,22 +568,12 @@ local function solveArm(arm: Arm, chest: CFrame, target: Vector3, pole: Vector3,
 			bend = direction:Cross(Vector3.zAxis)
 		end
 	end
-	bend = bend.Unit
-	local elbowPoint = S + direction * (l1 * cosA) + bend * (l1 * sinA)
-	local palmPoint = S + direction * d
-
-	-- The elbow is a hinge: both bones turn about one axis, square to the plane
-	-- of shoulder, elbow and palm, so the arm never twists along its length and
-	-- always folds the way an elbow folds (about each joint's own X axis)
-	local hinge = bend:Cross(direction)
-	local upperRot = aligned(upperBone, rotation(elC0).XVector, elbowPoint - S, hinge)
+	local hinge = bend.Unit:Cross(direction)
+	local upperRot = aligned(palmInUpper, rotation(elC0).XVector, direction, hinge)
 	local upper = CFrame.new(S) * upperRot * CFrame.new(-shC1.Position)
-	local elbowPivot = upper * elC0
-	local lowerRot = aligned(lowerBone, rotation(elC1).XVector, palmPoint - elbowPivot.Position, hinge)
-	local lower = CFrame.new(elbowPivot.Position) * lowerRot * CFrame.new(-elC1.Position)
 	return {
 		Shoulder = rotation(pivot:Inverse() * upper * shC1),
-		Elbow = rotation(elbowPivot:Inverse() * lower * elC1),
+		Elbow = elbowT,
 		Wrist = wristT,
 	}
 end
