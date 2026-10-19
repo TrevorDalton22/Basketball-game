@@ -465,6 +465,9 @@ local function palmOf(arm: Arm): Vector3
 end
 
 local ELBOW_MAX = math.rad(150) -- an elbow folds this far at most (and never bends backwards)
+-- Near full stretch a tiny change in distance swings the elbow a lot; ease into
+-- straight over this last bit (studs) so a target crossing it doesn't snap the arm
+local SOFT_REACH = 0.05
 
 -- The elbow turns only about its own joint X axis. With the hand set by the
 -- wrist bend, this works out how far the palm is from the shoulder pivot for
@@ -553,7 +556,13 @@ local function solveArm(arm: Arm, chest: CFrame, target: Vector3, pole: Vector3,
 	local palmInForearm = (jointC0(wrist) * wristT * jointC1(wrist):Inverse()) * palmOf(arm)
 	-- Fold the elbow (a hinge about its own X axis) until shoulder-to-palm is
 	-- the distance to the target...
-	local theta = hingeOf(arm, palmInForearm).BendFor(distance)
+	local elbowHinge = hingeOf(arm, palmInForearm)
+	local wanted = distance
+	local softStart = elbowHinge.Reach - SOFT_REACH
+	if wanted > softStart then
+		wanted = elbowHinge.Reach - SOFT_REACH * math.exp(-(wanted - softStart) / SOFT_REACH)
+	end
+	local theta = elbowHinge.BendFor(wanted)
 	local elbowT = CFrame.Angles(theta, 0, 0)
 	local palmInUpper = (elC0 * elbowT * elC1:Inverse()) * palmInForearm - shC1.Position
 	if palmInUpper.Magnitude < 1e-3 then
@@ -948,8 +957,9 @@ local function computeGoals(track: Track, rig: Rig, root: BasePart, chest: CFram
 	-- 6. Just scored: fist pump
 	if now - track.ScoredAt < ANIM.FistPumpTime then
 		local s = shoulders[1]
-		local pump = 0.25 * math.sin((now - track.ScoredAt) * 16)
-		goals.Arms[1] = armGoal(s + Vector3.new(0.3, 0.9 + pump, -0.35), Vector3.new(1, -0.3, 0.4), 0, "Pump", 14)
+		local pump = 0.14 * math.sin((now - track.ScoredAt) * 16)
+		-- In proportion to the arm, so big avatars don't hit the elbow's fold limit
+		goals.Arms[1] = armGoal(s + Vector3.new(0.17, 0.5 + pump, -0.2) * reach[1], Vector3.new(1, -0.3, 0.4), 0, "Pump", 14)
 		goals.Look = Vector3.new(0, 0.3, -1)
 		return goals
 	end
