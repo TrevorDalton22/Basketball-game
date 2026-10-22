@@ -36,10 +36,10 @@ This is a standalone project. It isn't connected to any other game.
   Each has a painted floor, key, three-point line with corners, a glass backboard, a physical rim (the ball can bounce off it), a net, a fence with one entrance facing the lobby, and a live sign that shows the court's rules or its score. Signs on the arch point to Court 2 and Court 3. Each court has its own pads, ball and practice mode.
 - **Queue pads:** stand on a court's blue **HOME** or red **AWAY** pad (each says which court it belongs to). When both are taken, the match starts after 2 seconds. If someone is already waiting alone on another court, the hint tells you where, so you can go and play them (when two players wait alone on different courts, only the one on the later court is told to walk over). You can step off or press **LEAVE** at any time. While a court is in a game its pads show **IN GAME**, and anyone who walks onto the court is moved off.
 - **Ball possession:** walk into a loose ball to pick it up. Only one player can hold it at a time, and the server decides who has it.
-- **Timed shooting:** hold the shoot button and release when the meter is in the green. The release decides the shot: early means short, late means long or off the glass, and perfect almost always goes in. A defender standing in front of you lowers your chances.
+- **Timed shooting:** hold the shoot button and release when the meter is in the green. The release decides the shot: early means short, late means long or off the glass, and a **Perfect** release always goes in: no defender, distance or block can stop it. Anything less is a roll: a defender standing in front of you lowers your chances, and so does shooting from very deep.
 - **Layups and dunks:** drive at the rim and press shoot. There's no meter; it happens on the press. Running hard from close in is a **dunk**: you leap at the hoop, slam it and drop down in front of the rim. Dunks almost always go in and are very hard to block. A defender standing in your path can stop you short, and then the dunk becomes a layup. Driving from a bit further out, or more slowly, is a **layup**: a quick hop and a soft finish. Layups go in often, but a defender in front can contest them, or jump to block them in the short moment before the ball leaves your hands. It only counts as a drive once you've been moving at the rim for a moment, so a quick first step or a sudden cut still gives you the jump shot. If a layup can't happen (for example you ran past the rim), a message says why. Standing still near the rim still gives you the normal jump shot with the meter, and so does driving along the baseline under the backboard (where shots aren't allowed).
 - **Steals:** on defense, get close, face the ball carrier and press steal. The closer you are, the better your chance. A successful steal knocks the ball loose. A miss leaves you slowed for a moment, so spamming it doesn't pay.
-- **Blocks:** react to the shot. Be on the ground when the shooter starts, then jump in front of them before they release. If you're in the air, close and between them and the rim, you can reject the shot into a loose ball. Bunny-hopping or hovering doesn't block anything.
+- **Blocks:** react to the shot. Be on the ground when the shooter starts, then jump in front of them before they release. If you're in the air, close and between them and the rim, you can reject the shot into a loose ball. Bunny-hopping or hovering doesn't block anything, and a **Perfect** release can't be blocked.
 - **Crossovers:** on offense, the crossover button bursts you sideways and switches the ball to your other hand. For a split second you can't be stolen from. A defender who reaches during it gets their **ankles broken** and stumbles.
 - **Scoring:** 2 points inside the arc, 3 outside (configurable). Every basket is checked on the server and counted once, for the right player.
 - **Match flow:** 3-2-1 countdown, then each court's own clock and target (see the table above; the standard game on COURT 1 is first to 15 with a 4-minute clock).
@@ -246,7 +246,8 @@ If you skip this and it's on, Output says *"⚠ The body animations aren't showi
    - [ ] Only the ball carrier can shoot. The other player can grab rebounds and loose balls.
    - [ ] **Steal:** as the defender, get within a few studs of the ball carrier and press **E**. Your character turns to face them and reaches. You see **STEAL!** and the ball pops loose (not every time). From too far away you're slowed for a moment instead.
    - [ ] **Crossover:** as the ball carrier, press **Q**. You burst sideways and the ball switches hands. If the defender reaches right then, they see **ANKLES!** and stumble.
-   - [ ] **Block:** as the defender, stand between the shooter and the hoop on the ground, and jump right after they start their shot. You see **BLOCKED!** and the ball flies loose. Holding jump the whole time doesn't block.
+   - [ ] **Perfect always goes in:** as the shooter, release in the green (**PERFECT**) with the defender right in front of you, from deep, or while they jump at you. It goes in every time.
+   - [ ] **Block:** as the defender, stand between the shooter and the hoop on the ground, and jump right after they start their shot (the shooter releases a little off the green, since a Perfect can't be blocked). You see **BLOCKED!** and the ball flies loose. Holding jump the whole time doesn't block.
    - [ ] **Dunk:** sprint straight at the rim from just inside the paint and press **E**. You leap at the hoop and see **SLAM DUNK!** (the other player sees **POSTERIZED!**).
    - [ ] **Layup:** drive at the rim from around the free-throw line (or more slowly) and press **E**. A quick hop and a soft shot: **+2 LAYUP** when it drops.
    - [ ] **Block a layup:** as the defender, stand on the ground between the attacker and the rim, and jump as soon as they hop. Sometimes you see **BLOCKED!**.
@@ -350,7 +351,8 @@ Every gameplay number is in **ReplicatedStorage › Shared › Config**. The mos
 | `Scoring.InsideArc` / `OutsideArc` | 2 / 3 | Point values |
 | `Shot.FillTime` | 0.6 | Seconds for the meter to fill |
 | `Shot.PerfectWindow` / `GoodWindow` | 0.05 / 0.13 | Size of the green and yellow zones |
-| `Shot.MakeChance` | 0.97 / 0.5 / 0.05 | Make chance for Perfect / Good / Early or Late releases |
+| `Shot.PerfectAlwaysScores` | true | A Perfect release always goes in: contests, range and blocks don't apply. `false`: Perfect uses `MakeChance.Perfect` and can miss or be blocked like any other release |
+| `Shot.MakeChance` | 0.97 / 0.5 / 0.05 | Make chance for Perfect (only when `PerfectAlwaysScores` is `false`) / Good / Early or Late releases |
 | `Movement.WalkSpeed` | 18 | Player run speed |
 | `Ball.Gravity` | 80 | Lower than characters' gravity for a nicer arc |
 | `Finish.DunkRange` / `LayupRange` | 7 / 11 | How close to the rim a drive can finish |
@@ -417,6 +419,7 @@ Keep `Court1` first, because it anchors the lobby. If two courts overlap, or two
 | Warning about `Baseplate` / `SpawnLocation` | Delete them (Step 2). |
 | `⚠ The body animations aren't showing on your character` | Do Step 8 (set Workspace › UseFixedSimulation to Disabled). |
 | `✗ <Name> didn't start because <Other>, which it uses, is an old copy` | Paste the *other* script again (the line above names its file); this one starts once that's fixed. |
+| The meter flashed **PERFECT** but the shot missed | The meter first shows your own timing, then switches to the server's grade a moment later. On a laggy connection, a release right at the edge of the green can be graded **GOOD** by the server, and only a server **PERFECT** (the *PERFECT RELEASE* message) is a sure make. Releasing in the middle of the green avoids it. |
 | Arms move normally but never follow the ball | `Animation.Enabled` is `false` in Config, or `CharacterAnimator` is missing (the setup check names it). |
 | The shop says *Your items are still loading* | Your saved data hasn't loaded yet (see the two DataStore rows below). Free items and the free emote still work; buying works once it loads. |
 | Things you bought are gone after you rejoin | Saving isn't on: do Step 7. Until then purchases, like coins, last for the session only. |
@@ -439,7 +442,7 @@ If you see a red error, copy it from the Output window and send it to me, includ
 |---|---|---|
 | Who holds the ball | Server (`BallService`) | One holder at a time. Pickups are refused right after a suspicious teleport. |
 | Release timing | Server's own measurement | The client's value may only nudge it by ±0.025 s to smooth out network lag. |
-| Make or miss | Server (`ShotService`) | Based on timing, distance and a defender in front. Then real physics plays the shot. A decided miss counts only if it really bounces in off the rim or glass. |
+| Make or miss | Server (`ShotService`) | A Perfect release (the server's own timing) is always a make. Anything else is based on timing, distance and a defender in front. Then real physics plays the shot. A decided miss counts only if it really bounces in off the rim or glass. |
 | Steals, crossovers, blocks | Server (`MovesService`, `ShotService`) | Distance, facing, cooldowns and timing are all checked on the server, and the server rolls the chance. |
 | Points | Server (`MatchService`) | Counted from a server-detected basket, once per shot, only for that match's shooter. |
 | Clock, shot clock, winner | Server (`MatchService`) | Published as attributes on the court model. |

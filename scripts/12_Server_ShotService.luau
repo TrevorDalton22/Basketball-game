@@ -21,7 +21,7 @@ local MatchService = require(Server:WaitForChild("MatchService"))
 local RemoteGuard = require(Server:WaitForChild("RemoteGuard"))
 
 local ShotService = {}
-ShotService.ScriptVersion = 3 -- Main/ClientMain compare this to spot an old copy; bump when this file changes
+ShotService.ScriptVersion = 4 -- Main/ClientMain compare this to spot an old copy; bump when this file changes
 ShotService.ScriptFile = "12_Server_ShotService" -- and this to spot another file's code pasted here
 
 local SHOT = Config.Shot
@@ -52,7 +52,15 @@ local function flatUnit(v: Vector3, fallback: Vector3): Vector3
 	return flat.Unit
 end
 
+-- Is this release a guaranteed basket? (checked before blocks and the make roll)
+local function sureMake(quality: string): boolean
+	return quality == "Perfect" and SHOT.PerfectAlwaysScores == true
+end
+
 local function makeChance(quality: string, distance: number, shooterPos: Vector3, toRim: Vector3, defender: Player?): number
+	if sureMake(quality) then
+		return 1
+	end
 	local chances = SHOT.MakeChance
 	local chance = if quality == "Perfect" then chances.Perfect elseif quality == "Good" then chances.Good else chances.Bad
 	if quality == "Good" and distance <= SHOT.CloseRange then
@@ -236,7 +244,8 @@ local function resolveShot(player: Player, entry: Pending, clientHold: number?)
 	local from = shooterPos + Vector3.new(0, SHOT.ReleaseHeight, 0) + toRim * SHOT.ReleaseForward
 
 	-- Blocked? The defender must be airborne, close, and between shooter and rim
-	if context.Defender and entry.DefenderGrounded and isBlocked(context.Defender, shooterPos, toRim, origin) then
+	-- (a Perfect release can't be blocked)
+	if context.Defender and entry.DefenderGrounded and not sureMake(quality) and isBlocked(context.Defender, shooterPos, toRim, origin) then
 		local side = toRim:Cross(Vector3.yAxis)
 		local deflect = -toRim * rng:NextNumber(9, 15) + side * rng:NextNumber(-7, 7) + Vector3.new(0, rng:NextNumber(6, 11), 0)
 		ball.Part:SetAttribute("Shooting", false)
@@ -250,7 +259,7 @@ local function resolveShot(player: Player, entry: Pending, clientHold: number?)
 	end
 
 	local chance = makeChance(quality, distance, shooterPos, toRim, context.Defender)
-	local made = rng:NextNumber() < chance
+	local made = chance >= 1 or rng:NextNumber() < chance
 	local boardDir = origin:VectorToWorldSpace(Vector3.new(0, 0, -1)) -- from the rim toward the backboard
 	local target = aimPoint(rim, toRim, boardDir, made, quality, fraction, distance)
 

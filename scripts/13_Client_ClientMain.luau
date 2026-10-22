@@ -17,8 +17,8 @@ end
 
 -- This file's version, sent to Main (which flags an old ClientMain), and the
 -- version Main must publish (an older or missing one means Main is the old copy)
-local CLIENT_MAIN_VERSION = 8
-local EXPECTED_MAIN_VERSION = 8
+local CLIENT_MAIN_VERSION = 9
+local EXPECTED_MAIN_VERSION = 9
 
 local MAIN_WHERE = "ServerScriptService > Server > Main"
 local CLIENT_MAIN_WHERE = "StarterPlayer > StarterPlayerScripts > ClientMain"
@@ -118,7 +118,7 @@ local CLIENT_PATH = CLIENT_MAIN_WHERE .. " > "
 -- Main checks the server modules the same way.
 type Module = { Name: string, Parent: Instance, Where: string, File: string, Version: number, Uses: { string } }
 local MODULES: { Module } = {
-	{ Name = "Config", Parent = Shared, Where = "ReplicatedStorage > Shared > Config", File = "01_Shared_Config", Version = 6, Uses = {} },
+	{ Name = "Config", Parent = Shared, Where = "ReplicatedStorage > Shared > Config", File = "01_Shared_Config", Version = 7, Uses = {} },
 	{ Name = "Signal", Parent = Shared, Where = "ReplicatedStorage > Shared > Signal", File = "02_Shared_Signal", Version = 1, Uses = {} },
 	{ Name = "Net", Parent = Shared, Where = "ReplicatedStorage > Shared > Net", File = "03_Shared_Net", Version = 4, Uses = {} },
 	{ Name = "BasketballMath", Parent = Shared, Where = "ReplicatedStorage > Shared > BasketballMath", File = "04_Shared_BasketballMath", Version = 1, Uses = { "Config" } },

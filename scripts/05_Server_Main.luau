@@ -19,8 +19,8 @@ end
 
 -- This file's version, published first so ClientMain can tell when Main is the
 -- old copy, and the version ClientMain must check in with (see the end)
-local MAIN_VERSION = 8
-local CLIENT_MAIN_VERSION = 8
+local MAIN_VERSION = 9
+local CLIENT_MAIN_VERSION = 9
 ReplicatedStorage:SetAttribute("StreetHoopsMainVersion", MAIN_VERSION)
 
 --------------------------------------------------------------------------------
@@ -33,7 +33,7 @@ type Expected = { Path: { string }, Class: string, File: string?, Version: numbe
 
 local EXPECTED: { Expected } = {
 	{ Path = { "ReplicatedStorage", "Shared" }, Class = "Folder" },
-	{ Path = { "ReplicatedStorage", "Shared", "Config" }, Class = "ModuleScript", File = "01_Shared_Config", Version = 6 },
+	{ Path = { "ReplicatedStorage", "Shared", "Config" }, Class = "ModuleScript", File = "01_Shared_Config", Version = 7 },
 	{ Path = { "ReplicatedStorage", "Shared", "Signal" }, Class = "ModuleScript", File = "02_Shared_Signal", Version = 1 },
 	{ Path = { "ReplicatedStorage", "Shared", "Net" }, Class = "ModuleScript", File = "03_Shared_Net", Version = 4 },
 	{ Path = { "ReplicatedStorage", "Shared", "BasketballMath" }, Class = "ModuleScript", File = "04_Shared_BasketballMath", Version = 1 },
@@ -45,7 +45,7 @@ local EXPECTED: { Expected } = {
 	{ Path = { "ServerScriptService", "Server", "BallService" }, Class = "ModuleScript", File = "09_Server_BallService", Version = 3 },
 	{ Path = { "ServerScriptService", "Server", "MatchService" }, Class = "ModuleScript", File = "10_Server_MatchService", Version = 4 },
 	{ Path = { "ServerScriptService", "Server", "QueueService" }, Class = "ModuleScript", File = "11_Server_QueueService", Version = 2 },
-	{ Path = { "ServerScriptService", "Server", "ShotService" }, Class = "ModuleScript", File = "12_Server_ShotService", Version = 3 },
+	{ Path = { "ServerScriptService", "Server", "ShotService" }, Class = "ModuleScript", File = "12_Server_ShotService", Version = 4 },
 	{ Path = { "StarterPlayer", "StarterPlayerScripts", "ClientMain" }, Class = "LocalScript", File = "13_Client_ClientMain" },
 	{ Path = { "StarterPlayer", "StarterPlayerScripts", "ClientMain", "UIKit" }, Class = "ModuleScript", File = "14_Client_UIKit" },
 	{ Path = { "StarterPlayer", "StarterPlayerScripts", "ClientMain", "MatchClient" }, Class = "ModuleScript", File = "15_Client_MatchClient" },

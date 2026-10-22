@@ -4,7 +4,7 @@
 -- but only the server's copy is ever trusted for gameplay decisions.
 
 local Config = {}
-Config.ScriptVersion = 6 -- Main/ClientMain compare this to spot an old copy; bump when this file changes
+Config.ScriptVersion = 7 -- Main/ClientMain compare this to spot an old copy; bump when this file changes
 Config.ScriptFile = "01_Shared_Config" -- and this to spot another file's code pasted here
 
 -- Court geometry, in studs. Each court is a half court: the local origin is the
@@ -137,8 +137,12 @@ Config.Shot = {
 	ArcPerStud = 0.16, -- extra apex height per stud of distance
 	BackspinSpeed = 14,
 
+	-- A Perfect release always goes in: no defender, distance or block can stop
+	-- it (false: Perfect uses MakeChance.Perfect, and contests, range and blocks
+	-- apply like they do to every other release)
+	PerfectAlwaysScores = true,
 	MakeChance = {
-		Perfect = 0.97,
+		Perfect = 0.97, -- only used when PerfectAlwaysScores is false
 		Good = 0.5,
 		Bad = 0.05, -- early / late
 	},
