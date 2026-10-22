@@ -4,7 +4,7 @@
 -- but only the server's copy is ever trusted for gameplay decisions.
 
 local Config = {}
-Config.ScriptVersion = 5 -- Main/ClientMain compare this to spot an old copy; bump when this file changes
+Config.ScriptVersion = 6 -- Main/ClientMain compare this to spot an old copy; bump when this file changes
 Config.ScriptFile = "01_Shared_Config" -- and this to spot another file's code pasted here
 
 -- Court geometry, in studs. Each court is a half court: the local origin is the
@@ -257,6 +257,64 @@ Config.Progression = {
 	LockWaitTime = 30, -- how long to wait for another server to let go of a player's data
 	MaxAttempts = 5, -- tries per load/save before giving up (waits 1, 2, 4, 8 s between)
 	ShutdownSaveTime = 25, -- seconds the server waits for saves when it shuts down
+}
+
+-- Cosmetics, bought with coins in the shop and saved with your stats. Everyone
+-- sees them. A price of 0 means everyone owns it from the start.
+-- Slots: one ball skin, one score effect, one headband, one pair of wristbands
+-- and one sleeve can be worn at a time; every emote you own can be played.
+-- Never rename an item's Id once players may own it (it's what gets saved).
+export type CosmeticItem = {
+	Id: string,
+	Slot: string, -- "Ball" | "Effect" | "Headband" | "Wristbands" | "Sleeve" | "Emote"
+	Name: string,
+	Price: number,
+	Color: Color3?, -- ball, gear or effect colour
+	Accent: Color3?, -- ball seams, or an effect's second colour
+	Material: Enum.Material?, -- ball or gear finish
+	Trail: Color3?, -- ball: a trail behind your shots
+	Effect: string?, -- score effect: "Sparks" | "Confetti" | "Fire" | "Lightning"
+	Emote: string?, -- emote: "Wave" | "Flex" | "Shrug" | "Salute" | "RaiseRoof" | "FingerWag"
+}
+local cosmetics: { CosmeticItem } = {
+	-- Ball skins (shown while you have the ball, and on your shots)
+	{ Id = "BallClassic", Slot = "Ball", Name = "Classic", Price = 0, Color = Color3.fromRGB(232, 106, 23), Accent = Color3.fromRGB(30, 18, 10), Material = Enum.Material.SmoothPlastic },
+	{ Id = "BallStreet", Slot = "Ball", Name = "Blacktop", Price = 120, Color = Color3.fromRGB(28, 28, 32), Accent = Color3.fromRGB(255, 140, 40), Material = Enum.Material.SmoothPlastic },
+	{ Id = "BallRetro", Slot = "Ball", Name = "Retro Red", Price = 250, Color = Color3.fromRGB(200, 40, 46), Accent = Color3.fromRGB(245, 245, 245), Material = Enum.Material.SmoothPlastic, Trail = Color3.fromRGB(255, 255, 255) },
+	{ Id = "BallIce", Slot = "Ball", Name = "Ice", Price = 400, Color = Color3.fromRGB(150, 220, 255), Accent = Color3.fromRGB(240, 250, 255), Material = Enum.Material.Glass, Trail = Color3.fromRGB(120, 210, 255) },
+	{ Id = "BallGold", Slot = "Ball", Name = "Gold", Price = 800, Color = Color3.fromRGB(255, 196, 50), Accent = Color3.fromRGB(90, 60, 10), Material = Enum.Material.Metal, Trail = Color3.fromRGB(255, 210, 80) },
+	{ Id = "BallGalaxy", Slot = "Ball", Name = "Galaxy", Price = 1200, Color = Color3.fromRGB(110, 50, 200), Accent = Color3.fromRGB(255, 120, 230), Material = Enum.Material.Neon, Trail = Color3.fromRGB(190, 110, 255) },
+	-- Score effects (a burst at the rim when you score)
+	{ Id = "EffectSparks", Slot = "Effect", Name = "Sparks", Price = 150, Effect = "Sparks", Color = Color3.fromRGB(255, 240, 160), Accent = Color3.fromRGB(255, 255, 255) },
+	{ Id = "EffectConfetti", Slot = "Effect", Name = "Confetti", Price = 300, Effect = "Confetti", Color = Color3.fromRGB(255, 80, 120), Accent = Color3.fromRGB(80, 200, 255) },
+	{ Id = "EffectFire", Slot = "Effect", Name = "On Fire", Price = 500, Effect = "Fire", Color = Color3.fromRGB(255, 120, 30), Accent = Color3.fromRGB(255, 220, 80) },
+	{ Id = "EffectLightning", Slot = "Effect", Name = "Lightning", Price = 800, Effect = "Lightning", Color = Color3.fromRGB(120, 180, 255), Accent = Color3.fromRGB(255, 255, 255) },
+	-- Emotes (G, or the EMOTE button, when you don't have the ball)
+	{ Id = "EmoteWave", Slot = "Emote", Name = "Wave", Price = 0, Emote = "Wave" },
+	{ Id = "EmoteFlex", Slot = "Emote", Name = "Flex", Price = 100, Emote = "Flex" },
+	{ Id = "EmoteShrug", Slot = "Emote", Name = "Shrug", Price = 100, Emote = "Shrug" },
+	{ Id = "EmoteSalute", Slot = "Emote", Name = "Salute", Price = 150, Emote = "Salute" },
+	{ Id = "EmoteRaiseRoof", Slot = "Emote", Name = "Raise the Roof", Price = 250, Emote = "RaiseRoof" },
+	{ Id = "EmoteFingerWag", Slot = "Emote", Name = "Finger Wag", Price = 400, Emote = "FingerWag" },
+	-- Gear (worn over your avatar)
+	{ Id = "HeadbandWhite", Slot = "Headband", Name = "White Headband", Price = 60, Color = Color3.fromRGB(240, 240, 240), Material = Enum.Material.Fabric },
+	{ Id = "HeadbandRed", Slot = "Headband", Name = "Red Headband", Price = 60, Color = Color3.fromRGB(210, 40, 50), Material = Enum.Material.Fabric },
+	{ Id = "HeadbandBlack", Slot = "Headband", Name = "Black Headband", Price = 90, Color = Color3.fromRGB(25, 25, 28), Material = Enum.Material.Fabric },
+	{ Id = "HeadbandGold", Slot = "Headband", Name = "Gold Headband", Price = 300, Color = Color3.fromRGB(255, 196, 50), Material = Enum.Material.Metal },
+	{ Id = "WristbandsWhite", Slot = "Wristbands", Name = "White Wristbands", Price = 50, Color = Color3.fromRGB(240, 240, 240), Material = Enum.Material.Fabric },
+	{ Id = "WristbandsBlue", Slot = "Wristbands", Name = "Blue Wristbands", Price = 50, Color = Color3.fromRGB(50, 110, 230), Material = Enum.Material.Fabric },
+	{ Id = "WristbandsGold", Slot = "Wristbands", Name = "Gold Wristbands", Price = 250, Color = Color3.fromRGB(255, 196, 50), Material = Enum.Material.Metal },
+	{ Id = "SleeveBlack", Slot = "Sleeve", Name = "Black Sleeve", Price = 80, Color = Color3.fromRGB(25, 25, 28), Material = Enum.Material.Fabric },
+	{ Id = "SleeveWhite", Slot = "Sleeve", Name = "White Sleeve", Price = 80, Color = Color3.fromRGB(240, 240, 240), Material = Enum.Material.Fabric },
+	{ Id = "SleeveRed", Slot = "Sleeve", Name = "Red Sleeve", Price = 80, Color = Color3.fromRGB(210, 40, 50), Material = Enum.Material.Fabric },
+}
+Config.Cosmetics = {
+	Items = cosmetics,
+	-- Slots you can wear one item in, in shop order (emotes are separate)
+	Slots = { "Ball", "Effect", "Headband", "Wristbands", "Sleeve" },
+	DefaultBall = "BallClassic", -- worn when no ball skin is chosen
+	EmoteTime = 2.6, -- seconds an emote plays
+	EmoteCooldown = 3, -- seconds between emotes
 }
 
 Config.AntiCheat = {

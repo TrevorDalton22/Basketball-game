@@ -17,8 +17,8 @@ end
 
 -- This file's version, sent to Main (which flags an old ClientMain), and the
 -- version Main must publish (an older or missing one means Main is the old copy)
-local CLIENT_MAIN_VERSION = 7
-local EXPECTED_MAIN_VERSION = 7
+local CLIENT_MAIN_VERSION = 8
+local EXPECTED_MAIN_VERSION = 8
 
 local MAIN_WHERE = "ServerScriptService > Server > Main"
 local CLIENT_MAIN_WHERE = "StarterPlayer > StarterPlayerScripts > ClientMain"
@@ -118,9 +118,9 @@ local CLIENT_PATH = CLIENT_MAIN_WHERE .. " > "
 -- Main checks the server modules the same way.
 type Module = { Name: string, Parent: Instance, Where: string, File: string, Version: number, Uses: { string } }
 local MODULES: { Module } = {
-	{ Name = "Config", Parent = Shared, Where = "ReplicatedStorage > Shared > Config", File = "01_Shared_Config", Version = 5, Uses = {} },
+	{ Name = "Config", Parent = Shared, Where = "ReplicatedStorage > Shared > Config", File = "01_Shared_Config", Version = 6, Uses = {} },
 	{ Name = "Signal", Parent = Shared, Where = "ReplicatedStorage > Shared > Signal", File = "02_Shared_Signal", Version = 1, Uses = {} },
-	{ Name = "Net", Parent = Shared, Where = "ReplicatedStorage > Shared > Net", File = "03_Shared_Net", Version = 3, Uses = {} },
+	{ Name = "Net", Parent = Shared, Where = "ReplicatedStorage > Shared > Net", File = "03_Shared_Net", Version = 4, Uses = {} },
 	{ Name = "BasketballMath", Parent = Shared, Where = "ReplicatedStorage > Shared > BasketballMath", File = "04_Shared_BasketballMath", Version = 1, Uses = { "Config" } },
 	{ Name = "UIKit", Parent = script, Where = CLIENT_PATH .. "UIKit", File = "14_Client_UIKit", Version = 1, Uses = { "Config" } },
 	{ Name = "MatchClient", Parent = script, Where = CLIENT_PATH .. "MatchClient", File = "15_Client_MatchClient", Version = 2, Uses = { "Signal", "Config", "BasketballMath" } },
@@ -129,7 +129,9 @@ local MODULES: { Module } = {
 	{ Name = "BallVisuals", Parent = script, Where = CLIENT_PATH .. "BallVisuals", File = "18_Client_BallVisuals", Version = 4, Uses = { "Config", "Signal", "UIKit", "MatchClient", "ShootController" } },
 	{ Name = "Hud", Parent = script, Where = CLIENT_PATH .. "Hud", File = "19_Client_Hud", Version = 4, Uses = { "Config", "Net", "UIKit", "MatchClient" } },
 	{ Name = "MovesController", Parent = script, Where = CLIENT_PATH .. "MovesController", File = "21_Client_MovesController", Version = 3, Uses = { "Config", "Net", "Signal", "UIKit", "MatchClient", "ShootController" } },
-	{ Name = "CharacterAnimator", Parent = script, Where = CLIENT_PATH .. "CharacterAnimator", File = "24_Client_CharacterAnimator", Version = 1, Uses = { "Config", "MatchClient", "ShootController", "MovesController", "BallVisuals" } },
+	{ Name = "CharacterAnimator", Parent = script, Where = CLIENT_PATH .. "CharacterAnimator", File = "24_Client_CharacterAnimator", Version = 2, Uses = { "Config", "MatchClient", "ShootController", "MovesController", "BallVisuals" } },
+	{ Name = "Shop", Parent = script, Where = CLIENT_PATH .. "Shop", File = "26_Client_Shop", Version = 1, Uses = { "Config", "Net", "UIKit", "MatchClient", "Hud" } },
+	{ Name = "CosmeticsVisuals", Parent = script, Where = CLIENT_PATH .. "CosmeticsVisuals", File = "27_Client_CosmeticsVisuals", Version = 1, Uses = { "Config", "MatchClient" } },
 }
 local entryByName: { [string]: Module } = {}
 for _, entry in MODULES do
@@ -139,7 +141,7 @@ end
 -- Start order matters: MovesController after ShootController so the
 -- steal/crossover keys get first look when they apply; CharacterAnimator last
 -- (it only watches the others)
-local START_ORDER = { "MatchClient", "Hud", "ShotMeter", "ShootController", "MovesController", "BallVisuals", "CharacterAnimator" }
+local START_ORDER = { "MatchClient", "Hud", "ShotMeter", "ShootController", "MovesController", "BallVisuals", "CharacterAnimator", "Shop", "CosmeticsVisuals" }
 
 local found: { [string]: ModuleScript } = {}
 local findDeadline = os.clock() + 10
@@ -176,6 +178,19 @@ for _, entry in MODULES do
 	if cause then
 		failed[entry.Name] = true
 		warn(("%s ✗ %s didn't load because %s, which it uses, has a problem (fix that one)."):format(TAG, entry.Name, cause))
+		continue
+	end
+	-- Or an old copy of one it uses (it may lack what this one needs): don't load it yet
+	local oldCopy: string? = nil
+	for _, used in entry.Uses do
+		if stale[used] then
+			oldCopy = used
+			break
+		end
+	end
+	if oldCopy then
+		stale[entry.Name] = true -- and anything that uses this one waits too
+		warn(("%s ✗ %s didn't start because %s, which it uses, is an old copy (fix that one)."):format(TAG, entry.Name, oldCopy))
 		continue
 	end
 	-- Load on a separate thread, so code that waits forever can't stall this one

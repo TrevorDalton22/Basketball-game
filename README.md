@@ -22,7 +22,7 @@ This is a standalone project. It isn't connected to any other game.
 
 ## What's in this version
 
-**Phase 5, step 5: animations** (after 1v1 defense, layups/dunks, progression and more courts), built on the Phase 3 prototype
+**Phase 5, step 6: cosmetics** (after 1v1 defense, layups/dunks, progression, more courts and animations), built on the Phase 3 prototype
 
 - **Street park:** grass, a concrete plaza, trees, benches, floodlights, a STREET HOOPS entrance arch and a sunset lighting setup. It's all built by script when the server starts.
 - **Three 1v1 half courts, all playable at once,** each with its own look and rules:
@@ -62,8 +62,15 @@ This is a standalone project. It isn't connected to any other game.
   - **Reactions:** broken ankles make you stumble, scoring gets a fist pump, and at the end the winner celebrates while the loser puts their hands on their knees. Heads follow the ball.
 
   It's all done in code on top of Roblox's own walk, run and jump animations, so there's nothing to upload, and it works with **R15 and R6** avatars. Everyone sees everyone's moves. It's purely visual: hitboxes and results don't change.
+- **Shop and cosmetics:** spend the coins you earn in matches. Open the shop with the **SHOP** button, **B**, or at the **SHOP** stand behind the spawn. Everything you buy is saved with your stats, and everyone sees what you wear.
+  - **Ball skins:** Classic (free), Blacktop, Retro Red, Ice, Gold and Galaxy. The ball takes the skin of whoever has it, and the fancier skins leave a trail behind your shots.
+  - **Score effects:** Sparks, Confetti, On Fire or Lightning bursts out of the rim when your shot drops.
+  - **Gear:** headbands, wristbands and a shooting sleeve in several colours, worn on your avatar (R15 and R6).
+  - **Emotes:** Wave (free), Flex, Shrug, Salute, Raise the Roof and Finger Wag. Play them from the **EMOTE** button or **G**, then a number key. They wait until you don't have the ball and your match isn't in play (before it, between games, or on the results screen).
 
-Cosmetics come next. See the [Roadmap](#roadmap).
+  The server checks every price and your coins before anything is bought, and buying is the only thing coins do: cosmetics never change how you play.
+
+Every step on the [Roadmap](#roadmap) is now done.
 
 ## Controls
 
@@ -78,12 +85,14 @@ Cosmetics come next. See the [Roadmap](#roadmap).
 | Block | Jump (Space) in front of the shooter | A (✕) | Jump button |
 | Leave the queue | Backspace or the LEAVE button | B (○) | LEAVE button |
 | Leave the match (press twice) | LEAVE MATCH button | D-pad down | LEAVE MATCH button |
+| Open or close the shop | **B**, the SHOP button, or **E** at the SHOP stand | **Y** (△), or X (□) at the stand | SHOP button, or tap the stand's prompt |
+| Emotes | **G**, then **1–6** (or click one) | D-pad up, then pick one | EMOTE button, then tap one |
 
 ---
 
 ## Build it in Roblox Studio from scratch
 
-This takes about 15 minutes. You create **2 folders and 24 scripts** and paste the code from the [`scripts/`](scripts) folder into each one. Rojo and plugins aren't needed.
+This takes about 15 minutes. You create **2 folders and 27 scripts** and paste the code from the [`scripts/`](scripts) folder into each one. Rojo and plugins aren't needed.
 
 ### Step 1: Create a new, empty place
 
@@ -137,8 +146,11 @@ How to add an object: hover over the parent in the Explorer, click **⊕**, and 
 | 22 | ServerScriptService › Server | `DataService` | ModuleScript | [`22_Server_DataService.luau`](scripts/22_Server_DataService.luau) |
 | 23 | ServerScriptService › Server | `ProgressionService` | ModuleScript | [`23_Server_ProgressionService.luau`](scripts/23_Server_ProgressionService.luau) |
 | 24 | StarterPlayer › StarterPlayerScripts › **ClientMain** | `CharacterAnimator` | ModuleScript | [`24_Client_CharacterAnimator.luau`](scripts/24_Client_CharacterAnimator.luau) |
+| 25 | ServerScriptService › Server | `CosmeticsService` | ModuleScript | [`25_Server_CosmeticsService.luau`](scripts/25_Server_CosmeticsService.luau) |
+| 26 | StarterPlayer › StarterPlayerScripts › **ClientMain** | `Shop` | ModuleScript | [`26_Client_Shop.luau`](scripts/26_Client_Shop.luau) |
+| 27 | StarterPlayer › StarterPlayerScripts › **ClientMain** | `CosmeticsVisuals` | ModuleScript | [`27_Client_CosmeticsVisuals.luau`](scripts/27_Client_CosmeticsVisuals.luau) |
 
-⚠️ Scripts **14–19, 21 and 24 go inside the `ClientMain` LocalScript**. Hover over `ClientMain` itself and click ⊕. Don't add them to StarterPlayerScripts.
+⚠️ Scripts **14–19, 21, 24, 26 and 27 go inside the `ClientMain` LocalScript**. Hover over `ClientMain` itself and click ⊕. Don't add them to StarterPlayerScripts.
 
 When you're done, the Explorer should look like this:
 
@@ -153,6 +165,7 @@ ServerScriptService
 └─ Server
    ├─ BallService
    ├─ CharacterService
+   ├─ CosmeticsService
    ├─ CourtBuilder
    ├─ DataService
    ├─ Main            ← Script
@@ -167,10 +180,12 @@ StarterPlayer
    └─ ClientMain      ← LocalScript
       ├─ BallVisuals
       ├─ CharacterAnimator
+      ├─ CosmeticsVisuals
       ├─ Hud
       ├─ MatchClient
       ├─ MovesController
       ├─ ShootController
+      ├─ Shop
       ├─ ShotMeter
       └─ UIKit
 ```
@@ -283,6 +298,35 @@ Two players (**Clients and Servers**, 2 players, start a match):
 
 Optional: set the avatar type to **R6** (**File → Experience Settings → Avatar**, or the **Avatar Settings** window in newer Studio), play again, and check the same moves. R6 arms are one piece, so they point instead of bending. Set it back afterwards if you prefer R15.
 
+### Shop and cosmetics
+
+Solo (**Play**). You start with 0 coins, so give yourself some first (this only works in Studio):
+
+1. While the game is running, click **Current: Client** in the **Test** tab so it says **Current: Server**.
+2. Open **View → Command Bar**, paste this line, and press Enter:
+
+   ```lua
+   print(game.ServerScriptService.Server.CosmeticsService.GiveCoins:Invoke(3000))
+   ```
+
+   Output says *Gave 3000 coins to …*. Click **Current: Server** again to go back to your player.
+
+- [ ] Press **B** (or click **SHOP**). The shop opens on **BALLS** and shows *3000 coins* (or however many you have). Cards you can't afford say **BUY** greyed out.
+- [ ] Buy **Gold**. The message says *Bought Gold!*, your coins go down by 800, and the card says **EQUIPPED**. Pick up a ball: it's gold. Shoot: a gold trail follows it.
+- [ ] Click **EQUIP** on **Classic**, then on **Gold** again: the ball you pick up changes each time.
+- [ ] **EFFECTS:** buy **On Fire**, then make a shot. Flames burst out of the rim.
+- [ ] **GEAR:** buy a headband, wristbands and a sleeve. They appear on your character. **TAKE OFF** removes one. Reset your character (Esc → Reset): the gear comes back on the new one.
+- [ ] Walk to the **SHOP** stand behind the spawn and press **E**: the shop opens.
+- [ ] Press **G**: the emote list shows **1 Wave** and any emotes you bought. Press **1**: you wave. Buy **Flex** in the EMOTES tab, then play it from the list.
+- [ ] Pick up the ball and press **G**: a message says emotes wait (they never play with the ball).
+- [ ] Stop and press Play again (after Step 7, so it's saved): your coins, items and what you wear are all still there.
+
+Two players (**Clients and Servers**, 2 players):
+
+- [ ] Player1 equips a ball skin, an effect and gear. Player2 sees Player1's gear, the skin on the ball while Player1 has it (and Player2's own skin when Player2 picks it up), and Player1's effect when Player1 scores.
+- [ ] Player1 emotes in the lobby: Player2 sees it.
+- [ ] During a match the **SHOP** and **EMOTE** buttons are hidden, and **B** says the shop opens again after your match. On the results screen they come back.
+
 ### Phone and controller
 
 - **Phone:** in the **Test** tab, use **Device** emulation and pick a phone. Press Play. While you hold the ball, a **SHOOT** button appears next to the jump button.
@@ -323,6 +367,18 @@ Every gameplay number is in **ReplicatedStorage › Shared › Config**. The mos
 | `Animation.FollowThroughTime` / `RimHangTime` | 0.6 / 0.9 | How long the shooting arm stays up, and the longest hang on the rim |
 | `Animation.MaxDistance` | 150 | Characters farther than this from the camera aren't animated (saves work) |
 | `Ball.ShootPoseOffset` / `LayupPoseOffset` / `DunkPoseOffset` | (see Config) | Where the ball goes for each shot, relative to the player. The hands follow it, so keep it within arm's reach |
+| `Cosmetics.Items` | 26 items | The shop's catalogue: each item's `Id`, `Slot`, `Name`, `Price` and colours (see below) |
+| `Cosmetics.EmoteTime` / `EmoteCooldown` | 2.6 / 3 | How long an emote plays, and the seconds between emotes |
+
+**Shop items** are the entries in `Config.Cosmetics.Items`. Each one has:
+
+- `Id`: unique, for example `"BallNeonGreen"`. Purchases are saved by `Id`, so **never rename or reuse one** that players may own (renaming it takes it away from them). Removing an item hides it; nobody gets their coins back.
+- `Slot`: `"Ball"`, `"Effect"`, `"Emote"`, `"Headband"`, `"Wristbands"` or `"Sleeve"`.
+- `Name` and `Price` (in coins; `0` makes it free for everyone).
+- **Ball:** `Color`, `Accent` (the seams), `Material`, and optionally `Trail` (a colour) for a shot trail.
+- **Effect:** `Effect` (`"Sparks"`, `"Confetti"`, `"Fire"` or `"Lightning"`), `Color` and `Accent`.
+- **Gear:** `Color` and `Material`.
+- **Emote:** `Emote` (`"Wave"`, `"Flex"`, `"Shrug"`, `"Salute"`, `"RaiseRoof"` or `"FingerWag"`). New emote moves need code in `CharacterAnimator`.
 
 **Courts** are the entries in `Config.Courts`. Each one has:
 
@@ -336,9 +392,9 @@ Keep `Court1` first, because it anchors the lobby. If two courts overlap, or two
 
 ## Troubleshooting
 
-**First, read the Output window** (View → Output) right after you press Play. When the server starts, `Main` checks that all 24 scripts are in the right places and that the shared and server scripts aren't old copies. Then `ClientMain` checks the client scripts (and checks that `Main` is current). You'll see one of these:
+**First, read the Output window** (View → Output) right after you press Play. When the server starts, `Main` checks that all 27 scripts are in the right places and that the shared and server scripts aren't old copies. Then `ClientMain` checks the client scripts (and checks that `Main` is current). You'll see one of these:
 
-- `[Street Hoops] ✓ All 24 scripts found…`, `✓ Shared and server scripts are up to date…`, `✓ Server ready`, and then `✓ Client ready`: everything loaded.
+- `[Street Hoops] ✓ All 27 scripts found…`, `✓ Shared and server scripts are up to date…`, `✓ Server ready`, and then `✓ Client ready`: everything loaded.
 - `[Street Hoops] ✗ … setup problem(s) found`, followed by a numbered list. Each line says exactly what's wrong, for example *"Config is not where it should be. Found: Workspace.Config. Move it to ReplicatedStorage > Shared > Config"*. A grey floor and a red **SETUP PROBLEM** sign also appear in the game, so you don't fall forever. Fix each item and press Play again.
 - `[Street Hoops] ✗ … script(s) are out of date` (from `Main`), or `[Street Hoops] ✗ <Name> is an old copy …` (from `ClientMain`): you updated some scripts but missed one. Each line names the file, for example *"ShotService is an old copy (version 2, needs 3). Paste scripts/12_Server_ShotService.luau into ServerScriptService > Server > ShotService again."* If it says *Main is an old copy* or *ClientMain is the old copy*, paste that one again (05 or 13).
 - Problems also appear **on screen** in a dark **STREET HOOPS SETUP PROBLEM** box at the top. (If `ClientMain` itself can't run, because it's missing or isn't a LocalScript, you get the grey floor and sign instead, and the numbered details are in Output.)
@@ -355,11 +411,15 @@ Keep `Court1` first, because it anchors the lobby. If two courts overlap, or two
 | `Config.Courts: … is too close to …` or `two courts are called …` | A court you added or moved overlaps another, or reuses an `Id`. See **Courts** under Tuning. |
 | Pressing **E** does nothing at all | A script was missed in the last update. Press Play and look for the **SETUP PROBLEM** box or `✗` lines in Output; they name the file to paste again. |
 | `… failed to load`, `… is still loading after 5 seconds`, or `… holds the code from scripts/…` | That script's code is incomplete or from another file. Paste the named file into it again (Ctrl+A in the script, then Ctrl+V). For a load error, the red line just above in Output is the script's own error. |
-| No HUD or meter (but the map is there) | `ClientMain` is disabled or is an old copy. After 30 seconds in Studio (90 on a live server) the server says which on screen (*"ClientMain is disabled…"* or *"ClientMain didn't start, or is an old copy…"*). If `ClientMain` isn't a LocalScript, or modules 14–19, 21 and 24 aren't its direct children, the setup check catches it instead and you get the SETUP PROBLEM sign. |
+| No HUD or meter (but the map is there) | `ClientMain` is disabled or is an old copy. After 30 seconds in Studio (90 on a live server) the server says which on screen (*"ClientMain is disabled…"* or *"ClientMain didn't start, or is an old copy…"*). If `ClientMain` isn't a LocalScript, or modules 14–19, 21, 24, 26 and 27 aren't its direct children, the setup check catches it instead and you get the SETUP PROBLEM sign. |
 | Warning about `Baseplate` / `SpawnLocation` | Delete them (Step 2). |
 | `⚠ The body animations aren't showing on your character` | Do Step 8 (set Workspace › UseFixedSimulation to Disabled). |
 | `✗ <Name> didn't start because <Other>, which it uses, is an old copy` | Paste the *other* script again (the line above names its file); this one starts once that's fixed. |
 | Arms move normally but never follow the ball | `Animation.Enabled` is `false` in Config, or `CharacterAnimator` is missing (the setup check names it). |
+| The shop says *Your items are still loading* | Your saved data hasn't loaded yet (see the two DataStore rows below). Free items and the free emote still work; buying works once it loads. |
+| Things you bought are gone after you rejoin | Saving isn't on: do Step 7. Until then purchases, like coins, last for the session only. |
+| No **SHOP** or **EMOTE** button | They're hidden while your match is in play, and come back on the results screen. If they never appear, `Shop` is missing or an old copy (the setup check names it). |
+| Gear doesn't appear on your character | Gear is welded to the head and arms by name. A custom character without the standard R15 or R6 body parts has nowhere to put it. |
 | `⚠ Player stats won't be saved on this server` | Do Step 7 (publish, then turn on Studio Access to API Services). Stats still count until you press Stop. |
 | `⚠ Couldn't load …'s stats yet … Still trying` | Roblox's DataStores are having trouble. It keeps trying while that player is in the server, and anything they earn meanwhile is added once it loads. Only if it still fails after 10 minutes does it say *won't be saved*; then rejoining loads them normally. |
 | `⚠ Couldn't save …'s stats; will try again` | Roblox's DataStores are having trouble. It tries again at the next autosave, and a player's last save when they leave keeps retrying until it works. |
@@ -371,7 +431,7 @@ If you see a red error, copy it from the Output window and send it to me, includ
 
 ## How it works
 
-**Who decides what.** The client only ever sends three requests: *I started a shot*, *I released after N seconds*, and *leave the queue or match*. Every request is rate-limited and checked on the server.
+**Who decides what.** In a match the client only ever sends a few requests: *I started a shot*, *I released after N seconds*, *steal*, *crossover* and *leave the queue or match*. Outside it, the shop adds *buy this*, *wear this* and *play this emote*. Every request is rate-limited and checked on the server.
 
 | Decision | Made by | Notes |
 |---|---|---|
@@ -383,6 +443,7 @@ If you see a red error, copy it from the Output window and send it to me, includ
 | Clock, shot clock, winner | Server (`MatchService`) | Published as attributes on the court model. |
 | Queue | Server (`QueueService`) | Checked by standing on the pad. |
 | Wins, losses, points, coins | Server (`ProgressionService`) | Worked out from the match result. The client is only told what it earned. |
+| Shop purchases, what you wear, emotes | Server (`CosmeticsService`) | Checks the item exists, its price, your coins and that you own what you wear. Coins and items are saved together in one write, so a purchase can't be half saved. |
 | Saved stats | Server (`DataService`) | Each player's data is locked to one server at a time, so a quick rejoin elsewhere can't overwrite newer progress. Data that fails to load is never saved over. |
 
 **Ball states:** `Held` → `InFlight` (shot) → `Scored` or `Loose` (rebound) → `Held`. A `Dead` ball can't be picked up (out of bounds, pauses). A shot the server has decided is a make passes cleanly through the hoop's collision group. A decided miss is aimed outside the rim tube, so it bounces away naturally.
@@ -390,6 +451,8 @@ If you see a red error, copy it from the Output window and send it to me, includ
 **Match states:** `Idle` (practice) → `Countdown` → `Live` ⇄ `Dead` → `Check` → `Live` … → `GameOver` → `Idle`.
 
 **Animations.** Every client poses every nearby character itself, from what the server already shares: who holds which ball and whether they're shooting, the shot type the server finally decided on (a dunk stopped short becomes a layup), the score, the match result, and the moves the server confirms (steal reaches, broken ankles). Each frame, right after Roblox's own animations have posed the body, `CharacterAnimator` works out where the hands should be (on the ball, up for a block, on the rim), bends the arm joints to put them there, and blends that over the normal animation. Nothing about it is sent to the server, so it can't affect gameplay.
+
+**Cosmetics.** The server publishes what each player owns and wears as attributes on their Player (`CosmeticsOwned`, `EquippedBall`, `EquippedEffect`, …) and builds the gear as real parts welded to the character, so everyone sees it. Each client then colours the ball for whoever holds it and plays the scorer's effect at the rim. Emotes are a server-checked attribute (`StreetHoopsEmote`) that `CharacterAnimator` turns into a pose on every screen.
 
 **Script roles**
 
@@ -418,7 +481,10 @@ If you see a red error, copy it from the Output window and send it to me, includ
 | MovesController | Steal and crossover input on keyboard, controller and touch |
 | DataService | Loads and saves each player's stats with DataStores: one server at a time per player, retries, autosave every 2 minutes, saves on leave and on shutdown |
 | ProgressionService | Turns finished matches into wins, losses, points and coins (decided on the server); shows them in the player list and on the results screen |
-| CharacterAnimator | Body animation in code: arms that follow the ball, defense and reactions, for R15 and R6 (visual only) |
+| CharacterAnimator | Body animation in code: arms that follow the ball, defense, reactions and emotes, for R15 and R6 (visual only) |
+| CosmeticsService | The shop on the server: checks and saves purchases, what everyone wears, emotes, and the gear parts on characters |
+| Shop | The shop screen, the emote list and their buttons and keys |
+| CosmeticsVisuals | Ball skins, shot trails and score effects on this screen (visual only) |
 
 ---
 
@@ -431,8 +497,8 @@ Each step is added on its own and tested before the next one starts:
 3. ~~Layups and dunks: context finishes near the rim~~ ✓
 4. ~~Progression: wins, losses, total points and coins saved with DataStoreService, with retries and safe error handling~~ ✓
 5. ~~More courts: three themed courts with their own rules, all playable at once~~ ✓
-6. ~~Animations: dribbling, shots, finishes, defense and reactions, done in code for R15 and R6~~ ✓ *(this version)*
-7. **Cosmetics** *(next)*: ball skins, outfits, court effects and emotes, unlocked with currency
+6. ~~Animations: dribbling, shots, finishes, defense and reactions, done in code for R15 and R6~~ ✓
+7. ~~Cosmetics: ball skins, score effects, gear and emotes, bought with coins and saved~~ ✓ *(this version)*
 
 ## Updating your copy
 

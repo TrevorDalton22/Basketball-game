@@ -19,8 +19,8 @@ end
 
 -- This file's version, published first so ClientMain can tell when Main is the
 -- old copy, and the version ClientMain must check in with (see the end)
-local MAIN_VERSION = 7
-local CLIENT_MAIN_VERSION = 7
+local MAIN_VERSION = 8
+local CLIENT_MAIN_VERSION = 8
 ReplicatedStorage:SetAttribute("StreetHoopsMainVersion", MAIN_VERSION)
 
 --------------------------------------------------------------------------------
@@ -33,15 +33,15 @@ type Expected = { Path: { string }, Class: string, File: string?, Version: numbe
 
 local EXPECTED: { Expected } = {
 	{ Path = { "ReplicatedStorage", "Shared" }, Class = "Folder" },
-	{ Path = { "ReplicatedStorage", "Shared", "Config" }, Class = "ModuleScript", File = "01_Shared_Config", Version = 5 },
+	{ Path = { "ReplicatedStorage", "Shared", "Config" }, Class = "ModuleScript", File = "01_Shared_Config", Version = 6 },
 	{ Path = { "ReplicatedStorage", "Shared", "Signal" }, Class = "ModuleScript", File = "02_Shared_Signal", Version = 1 },
-	{ Path = { "ReplicatedStorage", "Shared", "Net" }, Class = "ModuleScript", File = "03_Shared_Net", Version = 3 },
+	{ Path = { "ReplicatedStorage", "Shared", "Net" }, Class = "ModuleScript", File = "03_Shared_Net", Version = 4 },
 	{ Path = { "ReplicatedStorage", "Shared", "BasketballMath" }, Class = "ModuleScript", File = "04_Shared_BasketballMath", Version = 1 },
 	{ Path = { "ServerScriptService", "Server" }, Class = "Folder" },
 	{ Path = { "ServerScriptService", "Server", "Main" }, Class = "Script", File = "05_Server_Main" },
 	{ Path = { "ServerScriptService", "Server", "CharacterService" }, Class = "ModuleScript", File = "06_Server_CharacterService", Version = 3 },
 	{ Path = { "ServerScriptService", "Server", "RemoteGuard" }, Class = "ModuleScript", File = "07_Server_RemoteGuard", Version = 1 },
-	{ Path = { "ServerScriptService", "Server", "CourtBuilder" }, Class = "ModuleScript", File = "08_Server_CourtBuilder", Version = 3 },
+	{ Path = { "ServerScriptService", "Server", "CourtBuilder" }, Class = "ModuleScript", File = "08_Server_CourtBuilder", Version = 4 },
 	{ Path = { "ServerScriptService", "Server", "BallService" }, Class = "ModuleScript", File = "09_Server_BallService", Version = 3 },
 	{ Path = { "ServerScriptService", "Server", "MatchService" }, Class = "ModuleScript", File = "10_Server_MatchService", Version = 4 },
 	{ Path = { "ServerScriptService", "Server", "QueueService" }, Class = "ModuleScript", File = "11_Server_QueueService", Version = 2 },
@@ -55,9 +55,12 @@ local EXPECTED: { Expected } = {
 	{ Path = { "StarterPlayer", "StarterPlayerScripts", "ClientMain", "Hud" }, Class = "ModuleScript", File = "19_Client_Hud" },
 	{ Path = { "ServerScriptService", "Server", "MovesService" }, Class = "ModuleScript", File = "20_Server_MovesService", Version = 2 },
 	{ Path = { "StarterPlayer", "StarterPlayerScripts", "ClientMain", "MovesController" }, Class = "ModuleScript", File = "21_Client_MovesController" },
-	{ Path = { "ServerScriptService", "Server", "DataService" }, Class = "ModuleScript", File = "22_Server_DataService", Version = 2 },
+	{ Path = { "ServerScriptService", "Server", "DataService" }, Class = "ModuleScript", File = "22_Server_DataService", Version = 3 },
 	{ Path = { "ServerScriptService", "Server", "ProgressionService" }, Class = "ModuleScript", File = "23_Server_ProgressionService", Version = 2 },
 	{ Path = { "StarterPlayer", "StarterPlayerScripts", "ClientMain", "CharacterAnimator" }, Class = "ModuleScript", File = "24_Client_CharacterAnimator" },
+	{ Path = { "ServerScriptService", "Server", "CosmeticsService" }, Class = "ModuleScript", File = "25_Server_CosmeticsService", Version = 1 },
+	{ Path = { "StarterPlayer", "StarterPlayerScripts", "ClientMain", "Shop" }, Class = "ModuleScript", File = "26_Client_Shop" },
+	{ Path = { "StarterPlayer", "StarterPlayerScripts", "ClientMain", "CosmeticsVisuals" }, Class = "ModuleScript", File = "27_Client_CosmeticsVisuals" },
 }
 
 local SEARCH_ROOTS = { "Workspace", "ReplicatedStorage", "ReplicatedFirst", "ServerScriptService", "ServerStorage", "StarterPlayer", "StarterGui", "StarterPack", "Lighting" }
@@ -265,6 +268,9 @@ local function load(parent: Instance, name: string): boolean
 	local failure: string? = nil
 	if not finished then
 		failure = ("%s is still loading after %d seconds: it waits for something that doesn't exist, so it probably holds another file's code. Paste scripts/%s.luau into %s again."):format(name, LOAD_TIME, file, where)
+	elseif not ok and #stale > 0 then
+		-- Usually an old copy found above (it lacks something this one needs)
+		failure = ("%s failed to load: %s. That's most likely because of the old copy above: fix that first. If this line is still here after that, paste scripts/%s.luau into %s again."):format(name, tostring(result), file, where)
 	elseif not ok then
 		failure = ("%s failed to load: %s. Paste scripts/%s.luau into %s again (in the script: Ctrl+A, then Ctrl+V)."):format(name, tostring(result), file, where)
 	elseif result == nil then
@@ -290,7 +296,7 @@ for _, name in { "Config", "Signal", "Net", "BasketballMath" } do
 		return
 	end
 end
-for _, name in { "CharacterService", "RemoteGuard", "CourtBuilder", "BallService", "MatchService", "QueueService", "ShotService", "MovesService", "DataService", "ProgressionService" } do
+for _, name in { "CharacterService", "RemoteGuard", "CourtBuilder", "BallService", "MatchService", "QueueService", "ShotService", "MovesService", "DataService", "ProgressionService", "CosmeticsService" } do
 	if not load(Server, name) then
 		return
 	end
@@ -311,6 +317,7 @@ local ShotService = loaded.ShotService
 local MovesService = loaded.MovesService
 local DataService = loaded.DataService
 local ProgressionService = loaded.ProgressionService
+local CosmeticsService = loaded.CosmeticsService
 
 local courts: { any } = {}
 local function startStep(name: string, fn: () -> ()): boolean
@@ -352,6 +359,9 @@ local steps: { { Name: string, Run: () -> () } } = {
 	end },
 	{ Name = "Progression", Run = function()
 		ProgressionService.Init()
+	end },
+	{ Name = "Shop and cosmetics", Run = function()
+		CosmeticsService.Init()
 	end },
 }
 for _, entry in steps do

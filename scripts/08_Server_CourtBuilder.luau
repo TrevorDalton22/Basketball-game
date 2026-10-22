@@ -11,7 +11,7 @@ local Config = require(Shared:WaitForChild("Config"))
 local BasketballMath = require(Shared:WaitForChild("BasketballMath"))
 
 local CourtBuilder = {}
-CourtBuilder.ScriptVersion = 3 -- Main/ClientMain compare this to spot an old copy; bump when this file changes
+CourtBuilder.ScriptVersion = 4 -- Main/ClientMain compare this to spot an old copy; bump when this file changes
 CourtBuilder.ScriptFile = "08_Server_CourtBuilder" -- and this to spot another file's code pasted here
 
 export type CourtHandle = {
@@ -358,6 +358,33 @@ local function buildPark(parkFolder: Folder, courts: { CourtHandle })
 	-- Benches behind the spawn, facing the courts (the paths to the side courts stay clear)
 	bench(parkFolder, spawnCF * CFrame.new(-10, -0.4, 12))
 	bench(parkFolder, spawnCF * CFrame.new(10, -0.4, 12))
+
+	-- Shop stand between the benches, facing the spawn. Its prompt opens the
+	-- shop on the player's screen (the client listens for it; buying is checked
+	-- on the server like everything else).
+	local standCF = spawnCF * CFrame.new(0, -0.5, 15)
+	local stand = make("Model", { Name = "ShopStand" }, parkFolder) :: Model
+	local counter = block(stand, "Counter", Vector3.new(9, 3.2, 2.2), standCF * CFrame.new(0, 1.6, 0), Config.UI.Panel, Enum.Material.SmoothPlastic)
+	surfaceText(counter, Enum.NormalId.Front, "COSMETICS · COINS", Config.UI.TextDim, Config.UI.Font)
+	block(stand, "CounterTop", Vector3.new(9.6, 0.3, 2.8), standCF * CFrame.new(0, 3.35, 0), Config.UI.Accent, Enum.Material.SmoothPlastic)
+	for _, x in { -4.2, 4.2 } do
+		block(stand, "Post", Vector3.new(0.5, 7, 0.5), standCF * CFrame.new(x, 6.85, 0.9), PALETTE.Metal, Enum.Material.Metal)
+	end
+	local sign = block(stand, "ShopSign", Vector3.new(9.6, 2.2, 0.4), standCF * CFrame.new(0, 10.2, 0.9), Config.UI.Panel, Enum.Material.SmoothPlastic)
+	surfaceText(sign, Enum.NormalId.Front, "SHOP", Config.UI.Accent, Config.UI.FontHeavy)
+	surfaceText(sign, Enum.NormalId.Back, "SHOP", Config.UI.Accent, Config.UI.FontHeavy)
+	make("ProximityPrompt", {
+		Name = "ShopPrompt",
+		ActionText = "Open shop",
+		ObjectText = "Street Hoops Shop",
+		-- Roblox's usual prompt keys (E / X do nothing else without the ball); B
+		-- and Y are the shop's own toggle, which would close it again
+		KeyboardKeyCode = Enum.KeyCode.E,
+		GamepadKeyCode = Enum.KeyCode.ButtonX,
+		HoldDuration = 0,
+		MaxActivationDistance = 10,
+		RequiresLineOfSight = false,
+	}, counter)
 
 	-- Trees around the park, never on or right next to a court
 	local treeSpots = {

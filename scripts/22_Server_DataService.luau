@@ -1,6 +1,6 @@
 --!strict
 -- DataService (ModuleScript) — ServerScriptService > Server > DataService
--- Loads and saves each player's stats with DataStoreService. Nothing else
+-- Loads and saves each player's stats and cosmetics with DataStoreService. Nothing else
 -- touches the DataStore. Each player's saved data is locked to the one server
 -- they're on, so a quick rejoin elsewhere can't overwrite newer progress.
 -- If saving isn't possible (Studio without API access, or a DataStore outage),
@@ -15,12 +15,12 @@ local Config = require(Shared:WaitForChild("Config"))
 local Signal = require(Shared:WaitForChild("Signal"))
 
 local DataService = {}
-DataService.ScriptVersion = 2 -- Main compares this to spot an old copy; bump when this file changes
+DataService.ScriptVersion = 3 -- Main compares this to spot an old copy; bump when this file changes
 DataService.ScriptFile = "22_Server_DataService" -- and this to spot another file's code pasted here
 
 local TAG = "[Street Hoops]"
 local PROGRESSION = Config.Progression
-local SCHEMA = 1
+local SCHEMA = 2 -- 2: adds Inventory
 
 -- Every saved stat (a missing one starts at 0)
 local STAT_NAMES = { "Wins", "Losses", "Draws", "Games", "Points", "Coins" }
@@ -30,11 +30,15 @@ local STAT_NAMES = { "Wins", "Losses", "Draws", "Games", "Points", "Coins" }
 -- "SessionOnly": counts for this session but isn't saved
 export type Status = "Loading" | "Saved" | "SessionOnly"
 
+-- Cosmetics a player owns (by item Id) and what they wear in each slot
+export type Inventory = { Owned: { [string]: boolean }, Equipped: { [string]: string } }
+
 type Profile = {
 	Player: Player,
 	Key: string,
 	Stats: { [string]: any }, -- STAT_NAMES are numbers; fields a newer version added are kept as they are
 	Pending: { [string]: number }, -- changes made while loading
+	Inventory: Inventory, -- only changes once loaded (buying needs to know what they own)
 	Status: Status,
 	Session: string, -- this server's claim on the saved data
 	Dirty: boolean,
@@ -128,7 +132,7 @@ local function update(key: string, transform: (any) -> any): boolean
 end
 
 --------------------------------------------------------------------------------
--- Saved record: { Schema, Stats = { ... }, Lock = { Session, Time } }
+-- Saved record: { Schema, Stats = { ... }, Inventory = { Owned, Equipped }, Lock = { Session, Time } }
 --------------------------------------------------------------------------------
 
 local function readStats(record: any): { [string]: any }
@@ -141,6 +145,31 @@ local function readStats(record: any): { [string]: any }
 	return stats
 end
 
+local function readInventory(record: any): Inventory
+	local saved = if typeof(record) == "table" and typeof(record.Inventory) == "table" then record.Inventory else {}
+	local owned: { [string]: boolean } = {}
+	if typeof(saved.Owned) == "table" then
+		for id, value in saved.Owned do
+			if typeof(id) == "string" and value == true then
+				owned[id] = true
+			end
+		end
+	end
+	local equipped: { [string]: string } = {}
+	if typeof(saved.Equipped) == "table" then
+		for slot, id in saved.Equipped do
+			if typeof(slot) == "string" and typeof(id) == "string" then
+				equipped[slot] = id
+			end
+		end
+	end
+	return { Owned = owned, Equipped = equipped }
+end
+
+local function copyInventory(inventory: Inventory): Inventory
+	return { Owned = table.clone(inventory.Owned), Equipped = table.clone(inventory.Equipped) }
+end
+
 local function lockOf(record: any): (string?, number)
 	local lock = if typeof(record) == "table" then record.Lock else nil
 	if typeof(lock) ~= "table" then
@@ -151,11 +180,13 @@ local function lockOf(record: any): (string?, number)
 	return session, time
 end
 
--- A record to write: keeps any top-level fields a newer version added
-local function makeRecord(old: any, stats: { [string]: any }, lock: { Session: string, Time: number }?): { [string]: any }
+-- A record to write: keeps any top-level fields a newer version added. Coins
+-- and cosmetics go in the same write, so a purchase is saved whole or not at all.
+local function makeRecord(old: any, stats: { [string]: any }, inventory: Inventory, lock: { Session: string, Time: number }?): { [string]: any }
 	local record: { [string]: any } = if typeof(old) == "table" then table.clone(old) else {}
 	record.Schema = SCHEMA
 	record.Stats = stats
+	record.Inventory = inventory
 	record.Lock = lock
 	return record
 end
@@ -184,6 +215,7 @@ local function save(profile: Profile, release: boolean): boolean
 	profile.Saving = true
 	profile.Dirty = false
 	local snapshot = table.clone(profile.Stats)
+	local inventorySnapshot = copyInventory(profile.Inventory)
 	local lost = false
 	local wroteRelease = false
 	local ok = update(profile.Key, function(old)
@@ -196,7 +228,7 @@ local function save(profile: Profile, release: boolean): boolean
 		end
 		lost = false
 		wroteRelease = release
-		return makeRecord(old, snapshot, if release then nil else { Session = profile.Session, Time = os.time() })
+		return makeRecord(old, snapshot, inventorySnapshot, if release then nil else { Session = profile.Session, Time = os.time() })
 	end)
 	profile.Saving = false
 	inFlight -= 1
@@ -246,11 +278,13 @@ local function load(profile: Profile)
 	local retryWait = 10
 	local warnedSlow = false
 	local claimed: { [string]: any }? = nil
+	local claimedInventory: Inventory? = nil
 	while not profile.Released and profile.Player.Parent do
 		local lockedElsewhere = false
 		-- After a while, take over anyway: the other server has had its chance
 		local takeOver = lockSeenAt ~= nil and os.clock() - lockSeenAt >= PROGRESSION.LockWaitTime
 		local result: { [string]: any }? = nil
+		local resultInventory: Inventory? = nil
 		local ok = update(profile.Key, function(old)
 			local session, lockTime = lockOf(old)
 			local heldElsewhere = session ~= nil and session ~= profile.Session and os.time() - lockTime < staleAfter()
@@ -260,11 +294,12 @@ local function load(profile: Profile)
 			end
 			lockedElsewhere = false
 			local stats = readStats(old)
-			result = stats
-			return makeRecord(old, stats, { Session = profile.Session, Time = os.time() })
+			local inventory = readInventory(old)
+			result, resultInventory = stats, inventory
+			return makeRecord(old, stats, inventory, { Session = profile.Session, Time = os.time() })
 		end)
 		if ok and not lockedElsewhere then
-			claimed = result
+			claimed, claimedInventory = result, resultInventory
 			break
 		end
 		if not available then
@@ -299,6 +334,7 @@ local function load(profile: Profile)
 		end
 		profile.Dirty = next(profile.Pending) ~= nil
 		profile.Stats = claimed
+		profile.Inventory = claimedInventory or readInventory(nil)
 		profile.Status = "Saved"
 	else
 		profile.Status = "SessionOnly"
@@ -336,6 +372,7 @@ local function onPlayerAdded(player: Player)
 		Key = "Player_" .. player.UserId,
 		Stats = stats,
 		Pending = {},
+		Inventory = readInventory(nil),
 		Status = "Loading",
 		Session = ("%s/%d/%d"):format(game.JobId, os.time(), rng:NextInteger(1, 2 ^ 30)),
 		Dirty = false,
@@ -429,6 +466,56 @@ function DataService.GetStats(player: Player): { [string]: number }?
 		copy[name] = profile.Stats[name] or 0
 	end
 	return copy
+end
+
+-- Spend coins on a cosmetic. Only once their data has loaded (we must know
+-- what they own), never twice, never more than they have. Coins and the item
+-- change together, so they're always saved together. Returns ok, and why not:
+-- "Loading", "Owned", "Coins" or "Gone".
+function DataService.Buy(player: Player, itemId: string, price: number): (boolean, string?)
+	local profile = profiles[player]
+	if not profile or profile.Released then
+		return false, "Gone"
+	end
+	if profile.Status == "Loading" then
+		return false, "Loading"
+	end
+	if profile.Inventory.Owned[itemId] then
+		return false, "Owned"
+	end
+	local coins = profile.Stats.Coins or 0
+	if price < 0 or price ~= price or coins < price then
+		return false, "Coins"
+	end
+	profile.Stats.Coins = coins - price
+	profile.Inventory.Owned[itemId] = true
+	profile.Dirty = true
+	DataService.Changed:Fire(player)
+	return true, nil
+end
+
+-- What a player wears in a slot (nil: nothing). The caller checks they own it.
+function DataService.Equip(player: Player, slot: string, itemId: string?): boolean
+	local profile = profiles[player]
+	if not profile or profile.Released or profile.Status == "Loading" then
+		return false
+	end
+	local equipped: { [string]: string? } = profile.Inventory.Equipped
+	if equipped[slot] ~= itemId then
+		equipped[slot] = itemId
+		profile.Dirty = true
+		DataService.Changed:Fire(player)
+	end
+	return true
+end
+
+-- A copy of what a player owns and wears (nil until their data has loaded)
+function DataService.GetInventory(player: Player): Inventory?
+	local profile = profiles[player]
+	if not profile or profile.Status == "Loading" then
+		return nil
+	end
+	return copyInventory(profile.Inventory)
 end
 
 function DataService.GetStatus(player: Player): Status?

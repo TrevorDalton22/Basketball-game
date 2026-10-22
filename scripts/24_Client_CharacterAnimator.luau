@@ -28,13 +28,14 @@ local MovesController = require(Client:WaitForChild("MovesController"))
 local BallVisuals = require(Client:WaitForChild("BallVisuals"))
 
 local CharacterAnimator = {}
-CharacterAnimator.ScriptVersion = 1 -- ClientMain compares this to spot an old copy; bump when this file changes
+CharacterAnimator.ScriptVersion = 2 -- ClientMain compares this to spot an old copy; bump when this file changes
 CharacterAnimator.ScriptFile = "24_Client_CharacterAnimator" -- and this to spot another file's code pasted here
 
 local ANIM = Config.Animation
 local BALL = Config.Ball
 local DEFENSE = Config.Defense
 local MOVE_ATTRIBUTE = "StreetHoopsMove" -- set by the server's MovesService: "Reach:12", "Ankles:13"
+local EMOTE_ATTRIBUTE = "StreetHoopsEmote" -- set by the server's CosmeticsService: "Flex:14"
 local localPlayer = Players.LocalPlayer
 
 -- Root space: the HumanoidRootPart's frame. +X right, +Y up, -Z forward.
@@ -318,6 +319,9 @@ type Track = {
 	Move: string, -- latest one-off move: "Reach", "Ankles"
 	MoveAt: number,
 	MoveAttribute: any,
+	Emote: string, -- the emote playing (or ""), and when it started
+	EmoteAt: number,
+	EmoteAttribute: any,
 	Broken: Model?, -- this character's rig made the solver fail: leave it alone
 	Release: string, -- last shot that left this player's hands: "Jumper", "Layup", "Dunk"
 	ReleaseAt: number,
@@ -362,6 +366,9 @@ local function getTrack(player: Player): Track
 			Move = "",
 			MoveAt = -math.huge,
 			MoveAttribute = player:GetAttribute(MOVE_ATTRIBUTE), -- don't replay a move from before we saw them
+			Emote = "",
+			EmoteAt = -math.huge,
+			EmoteAttribute = player:GetAttribute(EMOTE_ATTRIBUTE),
 			Release = "",
 			ReleaseAt = -math.huge,
 			ReleaseSide = 1,
@@ -800,6 +807,49 @@ local function measureVelocity(track: Track, root: BasePart, dt: number)
 	track.Velocity = track.Velocity:Lerp(raw, smooth(25, dt))
 end
 
+-- Emotes (bought in the shop), as hand targets around the shoulders. t is the
+-- time since it started.
+local function emoteGoals(goals: Goals, name: string, t: number, rig: Rig, chest: CFrame, shoulders: { [number]: Vector3 }, reach: { [number]: number })
+	local function arm(side: number, offset: Vector3, pole: Vector3, flex: number)
+		goals.Arms[side] = armGoal(shoulders[side] + offset * reach[side], pole, flex, "Emote")
+	end
+	if name == "Wave" then
+		arm(1, Vector3.new(0.35 + 0.15 * math.sin(t * 9), 0.85, -0.15), Vector3.new(1, -0.6, 0.3), 0)
+		goals.Look = Vector3.new(0, 0.1, -1)
+	elseif name == "Flex" then
+		-- Upper arms out to the sides, fists up by the head
+		local pulse = 0.04 * math.sin(t * 10)
+		for side = -1, 1, 2 do
+			arm(side, Vector3.new(side * 0.34, 0.56 + pulse, 0.02), Vector3.new(side, -1, 0), 0.6)
+		end
+		goals.Pitch = -0.06
+	elseif name == "Shrug" then
+		for side = -1, 1, 2 do
+			arm(side, Vector3.new(side * 0.5, -0.5, -0.45), Vector3.new(side, -0.3, 0.6), -0.9)
+		end
+		goals.Roll = 0.06
+		goals.Look = Vector3.new(0.3, 0.15, -1)
+	elseif name == "Salute" then
+		-- Fingertips to the forehead
+		local head = chest.Position + Vector3.new(0, 1.3, 0)
+		if rig.Neck then
+			local neck = rig.Neck :: Joint
+			head = (chest * jointC0(neck) * jointC1(neck):Inverse()).Position
+		end
+		goals.Arms[1] = armGoal(head + Vector3.new(0.3, 0.25, -0.5), Vector3.new(1, -0.2, 0), 0.3, "Emote")
+		goals.Look = Vector3.new(0, 0.05, -1)
+	elseif name == "RaiseRoof" then
+		local pump = 0.15 * math.sin(t * 10)
+		for side = -1, 1, 2 do
+			arm(side, Vector3.new(side * 0.3, 0.55 + pump, -0.25), Vector3.new(side, -0.6, 0.2), -1)
+		end
+		goals.Look = Vector3.new(0, 0.4, -1)
+	elseif name == "FingerWag" then
+		arm(1, Vector3.new(-0.05 + 0.05 * math.sin(t * 14), 0.42, -0.35), Vector3.new(1, -1, 0.3), 0.5 * math.sin(t * 14))
+		goals.Look = Vector3.new(0.35 * math.sin(t * 7), 0.05, -1)
+	end
+end
+
 local function computeGoals(track: Track, rig: Rig, root: BasePart, chest: CFrame, dt: number, now: number): Goals
 	local player = track.Player
 	local goals: Goals = { Arms = {}, Pitch = 0, Roll = 0, Knees = {}, Look = nil }
@@ -898,6 +948,14 @@ local function computeGoals(track: Track, rig: Rig, root: BasePart, chest: CFram
 			goals.Knees[-releaseSide] = airborne
 		end
 		goals.Pitch = -0.04
+		return goals
+	end
+
+	-- 3b. An emote (never with the ball: picking it up ends the emote)
+	if held then
+		track.Emote = ""
+	elseif track.Emote ~= "" and now - track.EmoteAt < Config.Cosmetics.EmoteTime then
+		emoteGoals(goals, track.Emote, now - track.EmoteAt, rig, chest, shoulders, reach)
 		return goals
 	end
 
@@ -1144,6 +1202,18 @@ end
 -- Frame loop
 --------------------------------------------------------------------------------
 
+local function readEmote(track: Track, now: number)
+	local value = track.Player:GetAttribute(EMOTE_ATTRIBUTE)
+	if value == track.EmoteAttribute then
+		return
+	end
+	track.EmoteAttribute = value
+	local name = if typeof(value) == "string" then string.match(value, "^(%a+)") else nil
+	if name then
+		track.Emote, track.EmoteAt = name, now
+	end
+end
+
 local function readMove(track: Track, now: number)
 	local value = track.Player:GetAttribute(MOVE_ATTRIBUTE)
 	if value == track.MoveAttribute then
@@ -1184,6 +1254,7 @@ local function step(dt: number)
 		local track = getTrack(player)
 		active[player] = true
 		readMove(track, now)
+		readEmote(track, now)
 		local character = player.Character
 		local humanoid = character and character:FindFirstChildOfClass("Humanoid")
 		local root = rootOf(player)
