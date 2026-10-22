@@ -196,7 +196,10 @@ end
 local function resolveShot(player: Player, entry: Pending, clientHold: number?)
 	local ball = entry.Ball
 	if ball.State ~= "Held" or ball.Holder ~= player then
-		return -- lost the ball before releasing
+		-- Lost the ball before releasing (the clock ran out, a turnover): the
+		-- client's meter already shows its own grade, so take it down
+		feedback:FireClient(player, "ShotRejected", { Reason = "", Token = entry.ClientToken })
+		return
 	end
 	local context = MatchService.GetShotContext(ball, player)
 	local root = CharacterService.GetRoot(player)
@@ -218,11 +221,6 @@ local function resolveShot(player: Player, entry: Pending, clientHold: number?)
 		reject("")
 		return
 	end
-	local problem = shotSpotProblem(origin, root.Position, context.Practice)
-	if problem then
-		reject(problem)
-		return
-	end
 
 	-- The server's own measurement is the authority; the client's value only
 	-- refines it within a small tolerance to smooth out network jitter.
@@ -234,6 +232,14 @@ local function resolveShot(player: Player, entry: Pending, clientHold: number?)
 	hold = math.clamp(hold, 0, MAX_HOLD_TIME)
 	local fraction = hold / SHOT.FillTime
 	local quality = BasketballMath.ClassifyRelease(fraction)
+
+	-- The spot was checked when the shot began. A Perfect that drifted under the
+	-- glass during the windup still goes in; only stepping out of bounds stops it.
+	local problem = shotSpotProblem(origin, root.Position, context.Practice)
+	if problem and (problem == "" or not sureMake(quality)) then
+		reject(problem)
+		return
+	end
 
 	local rim: Vector3 = court.RimCenter
 	local shooterPos = root.Position

@@ -419,7 +419,7 @@ Keep `Court1` first, because it anchors the lobby. If two courts overlap, or two
 | Warning about `Baseplate` / `SpawnLocation` | Delete them (Step 2). |
 | `⚠ The body animations aren't showing on your character` | Do Step 8 (set Workspace › UseFixedSimulation to Disabled). |
 | `✗ <Name> didn't start because <Other>, which it uses, is an old copy` | Paste the *other* script again (the line above names its file); this one starts once that's fixed. |
-| The meter flashed **PERFECT** but the shot missed | The meter first shows your own timing, then switches to the server's grade a moment later. On a laggy connection, a release right at the edge of the green can be graded **GOOD** by the server, and only a server **PERFECT** (the *PERFECT RELEASE* message) is a sure make. Releasing in the middle of the green avoids it. |
+| The meter flashed **PERFECT** but the shot missed | The meter first shows your own timing, then switches to the server's grade a moment later. On a laggy connection the server can grade a release **GOOD** (or, after a long lag spike, **LATE**), and only a server **PERFECT** (the *PERFECT RELEASE* message) is a sure make. Releasing in the middle of the green makes this much less likely, but on a very laggy connection it can still happen. |
 | Arms move normally but never follow the ball | `Animation.Enabled` is `false` in Config, or `CharacterAnimator` is missing (the setup check names it). |
 | The shop says *Your items are still loading* | Your saved data hasn't loaded yet (see the two DataStore rows below). Free items and the free emote still work; buying works once it loads. |
 | Things you bought are gone after you rejoin | Saving isn't on: do Step 7. Until then purchases, like coins, last for the session only. |
