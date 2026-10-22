@@ -157,9 +157,18 @@ function buildGear(player: Player)
 	local headband = equipped("Headband")
 	local head = bodyPart(character, "Head")
 	if headband and head then
+		-- The head as drawn: a classic head (R6, older R15) is a mesh bigger than its part
 		local size = head.Size
-		local diameter = math.min(size.X, size.Z) * 1.04 + 0.04
-		wear(folder, head, gearPart("Headband", headband, Enum.PartType.Cylinder, Vector3.new(size.Y * 0.22, diameter, diameter)), CFrame.new(0, size.Y * 0.2, 0) * UPRIGHT)
+		local width, height = math.min(size.X, size.Z), size.Y
+		local mesh = head:FindFirstChildOfClass("SpecialMesh")
+		if mesh and mesh.MeshType == Enum.MeshType.Head then
+			width *= mesh.Scale.X
+			height *= mesh.Scale.Y
+		elseif mesh then
+			width, height = math.max(width, 1.25), math.max(height, 1.25)
+		end
+		local diameter = width * 1.04 + 0.04
+		wear(folder, head, gearPart("Headband", headband, Enum.PartType.Cylinder, Vector3.new(height * 0.22, diameter, diameter)), CFrame.new(0, height * 0.2, 0) * UPRIGHT)
 	end
 
 	local wristbands = equipped("Wristbands")
@@ -170,7 +179,8 @@ function buildGear(player: Player)
 			local arm = forearm or bodyPart(character, side .. " Arm")
 			if arm then
 				local size = arm.Size
-				local diameter = math.max(size.X, size.Z) * 1.1
+				-- Wide enough to cover the corners of a blocky arm
+				local diameter = math.sqrt(size.X * size.X + size.Z * size.Z) * 1.03
 				local fromBottom = if forearm then 0.2 else 0.45
 				wear(folder, arm, gearPart("Wristband", wristbands, Enum.PartType.Cylinder, Vector3.new(0.3, diameter, diameter)), CFrame.new(0, -size.Y / 2 + fromBottom, 0) * UPRIGHT)
 			end
@@ -278,9 +288,12 @@ local function onEmote(player: Player, id: any)
 		reply(player, false, "Pass on the emote while you have the ball")
 		return
 	end
-	if MatchService.GetLiveMatch(player) then
-		reply(player, false, "Emotes wait for a break in play")
-		return
+	-- Not during a match (the results screen is fine), like the shop screen
+	for _, cs in MatchService.GetCourtStates() do
+		if (cs.Home == player or cs.Away == player) and cs.State ~= "GameOver" then
+			reply(player, false, "Emotes wait for a break in play")
+			return
+		end
 	end
 	lastEmote[player] = now
 	emoteSerial += 1

@@ -866,6 +866,11 @@ local function computeGoals(track: Track, rig: Rig, root: BasePart, chest: CFram
 	local court, opponentId = matchOf(player)
 	local courtState = if court then attrString(court, "State") else ""
 	local held = heldBy[player.UserId]
+	-- An emote ends when they get the ball or play goes live
+	if held or courtState == "Live" then
+		track.Emote = ""
+	end
+	local emoting = track.Emote ~= "" and now - track.EmoteAt < Config.Cosmetics.EmoteTime
 
 	local function toLocal(world: Vector3): Vector3
 		return rootCF:PointToObjectSpace(world)
@@ -876,8 +881,8 @@ local function computeGoals(track: Track, rig: Rig, root: BasePart, chest: CFram
 		end
 	end
 
-	-- 1. End of a match: the winner celebrates, the loser slumps
-	if courtState == "GameOver" and court then
+	-- 1. End of a match: the winner celebrates, the loser slumps (an emote plays first)
+	if courtState == "GameOver" and court and not emoting then
 		local winner = attrNumber(court, "WinnerUserId")
 		local t = now * 9
 		if winner == player.UserId then
@@ -951,10 +956,8 @@ local function computeGoals(track: Track, rig: Rig, root: BasePart, chest: CFram
 		return goals
 	end
 
-	-- 3b. An emote (never with the ball: picking it up ends the emote)
-	if held then
-		track.Emote = ""
-	elseif track.Emote ~= "" and now - track.EmoteAt < Config.Cosmetics.EmoteTime then
+	-- 3b. An emote
+	if emoting then
 		emoteGoals(goals, track.Emote, now - track.EmoteAt, rig, chest, shoulders, reach)
 		return goals
 	end

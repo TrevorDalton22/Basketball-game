@@ -36,8 +36,10 @@ end
 type BallState = {
 	Owner: number, -- whose skin it shows: the holder, or the last one
 	Skin: string, -- the skin applied right now
-	Shooter: number, -- who last held it (for the score effect)
+	Shooter: number, -- who last held it (for the score effect in practice)
 	State: string,
+	Home: number, -- the court's scores last frame (for the score effect in a match)
+	Away: number,
 	Trail: Trail?,
 }
 local balls: { [string]: BallState } = {}
@@ -238,8 +240,9 @@ local function step()
 		local state = balls[courtId]
 		local ballState = ball:GetAttribute("State")
 		local now = if typeof(ballState) == "string" then ballState else ""
+		local home, away = attrNumber(court, "HomeScore"), attrNumber(court, "AwayScore")
 		if not state then
-			state = { Owner = 0, Skin = "", Shooter = 0, State = now, Trail = nil }
+			state = { Owner = 0, Skin = "", Shooter = 0, State = now, Home = home, Away = away, Trail = nil }
 			balls[courtId] = state
 		end
 		local holder = attrNumber(ball, "HolderUserId")
@@ -265,15 +268,25 @@ local function step()
 			trail.Enabled = showTrail
 		end
 
-		-- A shot dropped: the scorer's effect at the rim
-		if now == "Scored" and state.State ~= "Scored" and state.Shooter ~= 0 then
-			local effect = equipped(state.Shooter, "Effect")
-			local rim = court:GetAttribute("RimCenter")
-			if effect and typeof(rim) == "Vector3" then
-				playEffect(effect, rim)
+		-- A basket: the scorer's effect at the rim. In a match that's a score going
+		-- up (the ball skips straight past "Scored" on a game-winner); in practice,
+		-- the ball dropping in.
+		local scorer = 0
+		if court:GetAttribute("State") ~= "Idle" then
+			if home > state.Home then
+				scorer = attrNumber(court, "HomeUserId")
+			elseif away > state.Away then
+				scorer = attrNumber(court, "AwayUserId")
 			end
+		elseif now == "Scored" and state.State ~= "Scored" then
+			scorer = state.Shooter
 		end
-		state.State = now
+		state.State, state.Home, state.Away = now, home, away
+		local effect = if scorer ~= 0 then equipped(scorer, "Effect") else nil
+		local rim = court:GetAttribute("RimCenter")
+		if effect and typeof(rim) == "Vector3" then
+			playEffect(effect, rim)
+		end
 	end
 	for courtId in balls do
 		if not seen[courtId] then

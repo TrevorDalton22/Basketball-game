@@ -110,11 +110,14 @@ end
 -- Building the screen
 --------------------------------------------------------------------------------
 
+-- Phones: top right, clear of the thumbstick (which takes touches on the lower
+-- left). Elsewhere: middle of the left edge.
 local function sideButton(name: string, text: string, color: Color3, order: number): TextButton
+	local touch = UserInputService.TouchEnabled
 	local button = UIKit.new("TextButton", {
 		Name = name,
-		AnchorPoint = Vector2.new(0, 0.5),
-		Position = UDim2.new(0, 16, 0.42, (order - 1) * 54),
+		AnchorPoint = if touch then Vector2.new(1, 0) else Vector2.new(0, 0.5),
+		Position = if touch then UDim2.new(1, -16, 0, 8 + (order - 1) * 50) else UDim2.new(0, 16, 0.42, (order - 1) * 54),
 		Size = UDim2.fromOffset(104, 44),
 		BackgroundColor3 = color,
 		BackgroundTransparency = 0.1,
@@ -216,7 +219,7 @@ local function build()
 	panel = UIKit.panel({
 		Name = "ShopPanel",
 		AnchorPoint = Vector2.new(0.5, 0.5),
-		Position = UDim2.fromScale(0.5, 0.52),
+		Position = UDim2.fromScale(0.5, 0.5),
 		Size = UDim2.fromOffset(700, 470),
 		BackgroundTransparency = 0.04,
 		Visible = false,
@@ -252,6 +255,7 @@ local function build()
 		TextColor3 = THEME.Text,
 		Font = THEME.FontHeavy,
 		TextScaled = true,
+		Modal = true, -- frees the mouse (shift lock, first person) while the shop is open
 		Parent = panel,
 	}, { UIKit.corner(8) :: Instance, UIKit.padding(8) })
 	close.Activated:Connect(function()
@@ -319,10 +323,11 @@ local function build()
 		Parent = panel,
 	})
 
+	local touch = UserInputService.TouchEnabled
 	emoteList = UIKit.panel({
 		Name = "EmoteList",
-		AnchorPoint = Vector2.new(0, 0.5),
-		Position = UDim2.new(0, 132, 0.42, 54),
+		AnchorPoint = if touch then Vector2.new(1, 0) else Vector2.new(0, 0.5),
+		Position = if touch then UDim2.new(1, -132, 0, 8) else UDim2.new(0, 132, 0.42, 54),
 		Size = UDim2.fromOffset(210, 40),
 		AutomaticSize = Enum.AutomaticSize.Y,
 		Visible = false,
@@ -330,6 +335,20 @@ local function build()
 	})
 	UIKit.padding(8).Parent = emoteList
 	UIKit.new("UIListLayout", { Padding = UDim.new(0, 6), SortOrder = Enum.SortOrder.LayoutOrder, Parent = emoteList })
+
+	-- Shrink both to fit small screens (phones)
+	local panelScale = UIKit.new("UIScale", { Parent = panel })
+	local emoteScale = UIKit.new("UIScale", { Parent = emoteList })
+	local function fitToScreen()
+		local area = gui.AbsoluteSize
+		if area.X <= 0 or area.Y <= 0 then
+			return
+		end
+		panelScale.Scale = math.min(1, (area.Y - 24) / 470, (area.X - 24) / 700)
+		emoteScale.Scale = math.min(1, (area.Y - 24) / 260)
+	end
+	fitToScreen()
+	gui:GetPropertyChangedSignal("AbsoluteSize"):Connect(fitToScreen)
 end
 
 --------------------------------------------------------------------------------
@@ -407,11 +426,37 @@ local function refreshEmotes()
 				Font = THEME.Font,
 				TextScaled = true,
 				TextXAlignment = Enum.TextXAlignment.Left,
+				Modal = true, -- frees the mouse while the list is open
 				Parent = emoteList,
 			}, { UIKit.corner(8) :: Instance, UIKit.padding(7) })
 			button.Activated:Connect(function()
 				Shop.PlayEmote(item.Id)
 			end)
+		end
+	end
+end
+
+local function usingGamepad(): boolean
+	return string.find(UserInputService:GetLastInputType().Name, "Gamepad", 1, true) ~= nil
+end
+
+local function hideEmotes()
+	emoteList.Visible = false
+	local selected = GuiService.SelectedObject
+	if selected and selected:IsDescendantOf(emoteList) then
+		GuiService.SelectedObject = nil
+	end
+end
+
+-- A controller has no number keys: put its selection on the first emote
+local function selectFirstEmote()
+	if not emoteList.Visible or not usingGamepad() then
+		return
+	end
+	for _, child in emoteList:GetChildren() do
+		if child:IsA("TextButton") and child.LayoutOrder == 1 then
+			GuiService.SelectedObject = child
+			return
 		end
 	end
 end
@@ -424,7 +469,7 @@ local function refreshButtons()
 		Shop.SetOpen(false)
 	end
 	if not emoteButton.Visible and emoteList.Visible then
-		emoteList.Visible = false
+		hideEmotes()
 	end
 end
 
@@ -439,9 +484,9 @@ function Shop.SetOpen(open: boolean)
 	end
 	panel.Visible = open
 	if open then
-		emoteList.Visible = false
+		hideEmotes()
 		Shop.Refresh()
-		if UserInputService.GamepadEnabled and UserInputService:GetLastInputType() == Enum.UserInputType.Gamepad1 then
+		if usingGamepad() then
 			GuiService.SelectedObject = tabButtons[currentTab]
 		end
 	elseif GuiService.SelectedObject and GuiService.SelectedObject:IsDescendantOf(panel) then
@@ -454,7 +499,7 @@ function Shop.IsOpen(): boolean
 end
 
 function Shop.PlayEmote(id: string)
-	emoteList.Visible = false
+	hideEmotes()
 	if not emoteAllowed() then
 		Hud.Toast("Emotes wait until you don't have the ball and play stops", THEME.TextDim, 1.8)
 		return
@@ -492,7 +537,7 @@ end
 
 local function toggleEmotes()
 	if emoteList.Visible then
-		emoteList.Visible = false
+		hideEmotes()
 		return
 	end
 	if not emoteAllowed() then
@@ -502,6 +547,7 @@ local function toggleEmotes()
 	Shop.SetOpen(false)
 	refreshEmotes()
 	emoteList.Visible = true
+	selectFirstEmote()
 end
 
 function Shop.Init()
@@ -578,7 +624,13 @@ function Shop.Init()
 		player:GetAttributeChangedSignal(name):Connect(function()
 			Shop.Refresh()
 			if emoteList.Visible then
+				-- Rebuilding the rows drops a controller's selection: put it back
+				local selected = GuiService.SelectedObject
+				local hadSelection = selected ~= nil and selected:IsDescendantOf(emoteList)
 				refreshEmotes()
+				if hadSelection then
+					selectFirstEmote()
+				end
 			end
 		end)
 	end

@@ -85,8 +85,8 @@ Every step on the [Roadmap](#roadmap) is now done.
 | Block | Jump (Space) in front of the shooter | A (✕) | Jump button |
 | Leave the queue | Backspace or the LEAVE button | B (○) | LEAVE button |
 | Leave the match (press twice) | LEAVE MATCH button | D-pad down | LEAVE MATCH button |
-| Open or close the shop | **B**, the SHOP button, or **E** at the SHOP stand | **Y** (△), or X (□) at the stand | SHOP button, or tap the stand's prompt |
-| Emotes | **G**, then **1–6** (or click one) | D-pad up, then pick one | EMOTE button, then tap one |
+| Open or close the shop | **B**, the SHOP button, or **E** at the SHOP stand | **Y** (△), or X (□) at the stand | SHOP button (top right), or tap the stand's prompt |
+| Emotes | **G**, then **1–6** (or click one) | D-pad up, then **A** on the highlighted one | EMOTE button (top right), then tap one |
 
 ---
 
@@ -329,8 +329,8 @@ Two players (**Clients and Servers**, 2 players):
 
 ### Phone and controller
 
-- **Phone:** in the **Test** tab, use **Device** emulation and pick a phone. Press Play. While you hold the ball, a **SHOOT** button appears next to the jump button.
-- **Controller:** plug one in and press Play. Hold **R2** to shoot, and press **B** to leave a queue.
+- **Phone:** in the **Test** tab, use **Device** emulation and pick a phone. Press Play. While you hold the ball, a **SHOOT** button appears next to the jump button. The **SHOP** and **EMOTE** buttons sit at the top right (clear of the thumbstick), and the shop shrinks to fit the screen.
+- **Controller:** plug one in and press Play. Hold **R2** to shoot, and press **B** to leave a queue. **Y** opens the shop (move with the D-pad, **A** to press a button); **D-pad up** opens the emote list with the first emote highlighted.
 
 ---
 
