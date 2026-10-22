@@ -343,11 +343,17 @@ function CosmeticsService.Init()
 				return "Pass a number of coins from 1 to 1000000, for example GiveCoins:Invoke(3000)"
 			end
 			local given = {}
+			local realSaved = false
 			for _, player in Players:GetPlayers() do
 				DataService.Increment(player, "Coins", math.floor(amount))
 				table.insert(given, player.Name)
+				-- Test players have negative UserIds; a solo Play is your own account
+				if player.UserId > 0 and DataService.GetStatus(player) == "Saved" then
+					realSaved = true
+				end
 			end
-			return ("Gave %d coins to %s"):format(math.floor(amount), if #given > 0 then table.concat(given, ", ") else "nobody (no players yet)")
+			local note = if realSaved then " (saved to your real account: they carry over to the published game)" else ""
+			return ("Gave %d coins to %s%s"):format(math.floor(amount), if #given > 0 then table.concat(given, ", ") else "nobody (no players yet)", note)
 		end
 		give.Parent = script
 	end

@@ -52,6 +52,7 @@ local grid: ScrollingFrame
 local tabButtons: { TextButton } = {}
 local emoteList: Frame
 local currentTab = 1
+local rebuilding = false -- the emote rows are being rebuilt (their selection briefly drops)
 local cards: { [string]: { Frame: Frame, Status: TextLabel, Button: TextButton } } = {}
 
 --------------------------------------------------------------------------------
@@ -110,14 +111,9 @@ end
 -- Building the screen
 --------------------------------------------------------------------------------
 
--- Phones: top right, clear of the thumbstick (which takes touches on the lower
--- left). Elsewhere: middle of the left edge.
-local function sideButton(name: string, text: string, color: Color3, order: number): TextButton
-	local touch = UserInputService.TouchEnabled
+local function sideButton(name: string, text: string, color: Color3): TextButton
 	local button = UIKit.new("TextButton", {
 		Name = name,
-		AnchorPoint = if touch then Vector2.new(1, 0) else Vector2.new(0, 0.5),
-		Position = if touch then UDim2.new(1, -16, 0, 8 + (order - 1) * 50) else UDim2.new(0, 16, 0.42, (order - 1) * 54),
 		Size = UDim2.fromOffset(104, 44),
 		BackgroundColor3 = color,
 		BackgroundTransparency = 0.1,
@@ -213,8 +209,8 @@ local function build()
 		DisplayOrder = 8,
 		Parent = player:WaitForChild("PlayerGui"),
 	})
-	shopButton = sideButton("ShopButton", "SHOP", THEME.Accent, 1)
-	emoteButton = sideButton("EmoteButton", "EMOTE", THEME.PanelLight, 2)
+	shopButton = sideButton("ShopButton", "SHOP", THEME.Accent)
+	emoteButton = sideButton("EmoteButton", "EMOTE", THEME.PanelLight)
 
 	panel = UIKit.panel({
 		Name = "ShopPanel",
@@ -323,11 +319,8 @@ local function build()
 		Parent = panel,
 	})
 
-	local touch = UserInputService.TouchEnabled
 	emoteList = UIKit.panel({
 		Name = "EmoteList",
-		AnchorPoint = if touch then Vector2.new(1, 0) else Vector2.new(0, 0.5),
-		Position = if touch then UDim2.new(1, -132, 0, 8) else UDim2.new(0, 132, 0.42, 54),
 		Size = UDim2.fromOffset(210, 40),
 		AutomaticSize = Enum.AutomaticSize.Y,
 		Visible = false,
@@ -336,7 +329,10 @@ local function build()
 	UIKit.padding(8).Parent = emoteList
 	UIKit.new("UIListLayout", { Padding = UDim.new(0, 6), SortOrder = Enum.SortOrder.LayoutOrder, Parent = emoteList })
 
-	-- Shrink both to fit small screens (phones)
+	-- Fit the screen: on phones (Roblox's own test for a small touch screen,
+	-- where it starts the player list closed) the buttons go top right, clear
+	-- of the thumbstick; everywhere else they sit in the middle of the left
+	-- edge. The panel and the list shrink to fit small screens.
 	local panelScale = UIKit.new("UIScale", { Parent = panel })
 	local emoteScale = UIKit.new("UIScale", { Parent = emoteList })
 	local function fitToScreen()
@@ -344,6 +340,15 @@ local function build()
 		if area.X <= 0 or area.Y <= 0 then
 			return
 		end
+		local camera = workspace.CurrentCamera
+		local screen = if camera then camera.ViewportSize else area
+		local phone = UserInputService.TouchEnabled and (screen.Y < 500 or screen.X < 700)
+		for order, button in { shopButton, emoteButton } do
+			button.AnchorPoint = if phone then Vector2.new(1, 0) else Vector2.new(0, 0.5)
+			button.Position = if phone then UDim2.new(1, -16, 0, 8 + (order - 1) * 50) else UDim2.new(0, 16, 0.42, (order - 1) * 54)
+		end
+		emoteList.AnchorPoint = if phone then Vector2.new(1, 0) else Vector2.new(0, 0.5)
+		emoteList.Position = if phone then UDim2.new(1, -132, 0, 8) else UDim2.new(0, 132, 0.42, 54)
 		panelScale.Scale = math.min(1, (area.Y - 24) / 470, (area.X - 24) / 700)
 		emoteScale.Scale = math.min(1, (area.Y - 24) / 260)
 	end
@@ -429,6 +434,9 @@ local function refreshEmotes()
 				Modal = true, -- frees the mouse while the list is open
 				Parent = emoteList,
 			}, { UIKit.corner(8) :: Instance, UIKit.padding(7) })
+			if n == 1 then
+				button.NextSelectionUp = emoteButton -- D-pad up from the top leaves (and closes) the list
+			end
 			button.Activated:Connect(function()
 				Shop.PlayEmote(item.Id)
 			end)
@@ -482,9 +490,11 @@ function Shop.SetOpen(open: boolean)
 		Hud.Toast("The shop opens again after your match", THEME.TextDim, 1.8)
 		return
 	end
+	if open then
+		hideEmotes() -- first, so its selection change can't look like leaving the open panel
+	end
 	panel.Visible = open
 	if open then
-		hideEmotes()
 		Shop.Refresh()
 		if usingGamepad() then
 			GuiService.SelectedObject = tabButtons[currentTab]
@@ -627,13 +637,35 @@ function Shop.Init()
 				-- Rebuilding the rows drops a controller's selection: put it back
 				local selected = GuiService.SelectedObject
 				local hadSelection = selected ~= nil and selected:IsDescendantOf(emoteList)
+				rebuilding = true
 				refreshEmotes()
 				if hadSelection then
 					selectFirstEmote()
 				end
+				rebuilding = false
 			end
 		end)
 	end
+	-- A controller's selection leaving a menu (D-pad off it, or B to back out) closes it
+	GuiService:GetPropertyChangedSignal("SelectedObject"):Connect(function()
+		if rebuilding then
+			return
+		end
+		local selected = GuiService.SelectedObject
+		local onSideButton = selected == shopButton or selected == emoteButton
+		if emoteList.Visible and not (selected and selected:IsDescendantOf(emoteList)) then
+			emoteList.Visible = false
+			if onSideButton then
+				GuiService.SelectedObject = nil
+			end
+		elseif panel.Visible and usingGamepad() and not (selected and selected:IsDescendantOf(panel)) then
+			Shop.SetOpen(false)
+			if onSideButton then
+				GuiService.SelectedObject = nil
+			end
+		end
+	end)
+
 	MatchClient.Changed:Connect(refreshButtons)
 	refreshButtons()
 	Shop.Refresh()

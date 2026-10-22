@@ -85,8 +85,8 @@ Every step on the [Roadmap](#roadmap) is now done.
 | Block | Jump (Space) in front of the shooter | A (✕) | Jump button |
 | Leave the queue | Backspace or the LEAVE button | B (○) | LEAVE button |
 | Leave the match (press twice) | LEAVE MATCH button | D-pad down | LEAVE MATCH button |
-| Open or close the shop | **B**, the SHOP button, or **E** at the SHOP stand | **Y** (△), or X (□) at the stand | SHOP button (top right), or tap the stand's prompt |
-| Emotes | **G**, then **1–6** (or click one) | D-pad up, then **A** on the highlighted one | EMOTE button (top right), then tap one |
+| Open or close the shop | **B**, the SHOP button, or **E** at the SHOP stand | **Y** (△), or X (□) at the stand | SHOP button (top right on phones), or tap the stand's prompt |
+| Emotes | **G**, then **1–6** (or click one) | D-pad up, then **A** on the highlighted one | EMOTE button (top right on phones), then tap one |
 
 ---
 
@@ -311,6 +311,8 @@ Solo (**Play**). You start with 0 coins, so give yourself some first (this only 
 
    Output says *Gave 3000 coins to …*. Click **Current: Server** again to go back to your player.
 
+   ⚠️ With saving on (Step 7), a solo **Play** uses your own Roblox account and the published game's saved data, so these coins and anything you buy with them carry over to your account in the live game (Output adds a note saying so). To keep your account clean, run these checks in **Test → Clients and Servers** with **1 player** instead: its Player1 is a test account. There, use the **Server** window's Command Bar for the line above.
+
 - [ ] Press **B** (or click **SHOP**). The shop opens on **BALLS** and shows *3000 coins* (or however many you have). Cards you can't afford say **BUY** greyed out.
 - [ ] Buy **Gold**. The message says *Bought Gold!*, your coins go down by 800, and the card says **EQUIPPED**. Pick up a ball: it's gold. Shoot: a gold trail follows it.
 - [ ] Click **EQUIP** on **Classic**, then on **Gold** again: the ball you pick up changes each time.
@@ -319,9 +321,9 @@ Solo (**Play**). You start with 0 coins, so give yourself some first (this only 
 - [ ] Walk to the **SHOP** stand behind the spawn and press **E**: the shop opens.
 - [ ] Press **G**: the emote list shows **1 Wave** and any emotes you bought. Press **1**: you wave. Buy **Flex** in the EMOTES tab, then play it from the list.
 - [ ] Pick up the ball and press **G**: a message says emotes wait (they never play with the ball).
-- [ ] Stop and press Play again (after Step 7, so it's saved): your coins, items and what you wear are all still there.
+- [ ] Stop and press Play again (or **Cleanup**, then **Start**, for Clients and Servers), after Step 7 so it's saved: your coins, items and what you wear are all still there.
 
-Two players (**Clients and Servers**, 2 players):
+Two players (**Clients and Servers**, 2 players). Test players start with 0 coins: once both player windows have loaded, go to the **Server** window, open **View → Command Bar** there, and run the same `print(game.ServerScriptService.Server.CosmeticsService.GiveCoins:Invoke(3000))` line. Output says *Gave 3000 coins to Player1, Player2*.
 
 - [ ] Player1 equips a ball skin, an effect and gear. Player2 sees Player1's gear, the skin on the ball while Player1 has it (and Player2's own skin when Player2 picks it up), and Player1's effect when Player1 scores.
 - [ ] Player1 emotes in the lobby: Player2 sees it.
@@ -329,8 +331,8 @@ Two players (**Clients and Servers**, 2 players):
 
 ### Phone and controller
 
-- **Phone:** in the **Test** tab, use **Device** emulation and pick a phone. Press Play. While you hold the ball, a **SHOOT** button appears next to the jump button. The **SHOP** and **EMOTE** buttons sit at the top right (clear of the thumbstick), and the shop shrinks to fit the screen.
-- **Controller:** plug one in and press Play. Hold **R2** to shoot, and press **B** to leave a queue. **Y** opens the shop (move with the D-pad, **A** to press a button); **D-pad up** opens the emote list with the first emote highlighted.
+- **Phone:** in the **Test** tab, use **Device** emulation and pick a phone. Press Play. While you hold the ball, a **SHOOT** button appears next to the jump button. On a phone the **SHOP** and **EMOTE** buttons sit at the top right (clear of the thumbstick; tablets keep them on the left), and the shop shrinks to fit the screen.
+- **Controller:** plug one in and press Play. Hold **R2** to shoot, and press **B** to leave a queue. **Y** opens the shop (move with the D-pad, **A** to press a button); **D-pad up** opens the emote list with the first emote highlighted; **B** (or D-pad up from the top emote) closes it.
 
 ---
 
